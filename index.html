@@ -363,11 +363,11 @@ function render(){
   document.querySelectorAll('nav button').forEach(b=> b.classList.toggle('on', b.dataset.v===view.name));
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
-             presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable}[view.name];
+             presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable, help:vHelp}[view.name];
   m.innerHTML = V();
   const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
-             playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定'}[view.name]
+             playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方'}[view.name]
              || (['event','league','table'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
   bind();
@@ -952,7 +952,9 @@ function vTable(){
   const chartCard = `<div class="card"><h2>推移グラフ</h2>
     ${series.length && nSec>0 ? lineChart(series,'節') : '<div class="cond-note">結果を取り込むとグラフが表示されます(自分の名前を設定してください)</div>'}
     <div class="no-copy"><label>比較相手(最大4人)</label>
-      <div class="row" style="flex-wrap:wrap;gap:6px">${rivalSels}</div></div>
+      <div class="row" style="flex-wrap:wrap;gap:6px">${rivalSels}</div>
+      <button class="small secondary" data-act="addRivals" style="margin-top:8px">👤 選択中の比較相手をプレイヤー帳に追加</button>
+    </div>
   </div>`;
   return setCard + tableCard + chartCard + `
     <button class="secondary danger no-copy" data-act="clearRows">順位表を全て消去</button>
@@ -1027,6 +1029,10 @@ function vSettings(){
       ${customs}
       <button class="secondary" data-act="newPreset">＋ カスタムルール追加</button>
     </div>
+    <div class="card"><h2>ヘルプ</h2>
+      <div class="listitem" data-act="help"><div class="grow"><div class="t">📖 使い方ガイド</div>
+      <div class="s">各モードの操作手順と画面の見方</div></div><div>›</div></div>
+    </div>
     <div class="card"><h2>データ管理</h2>
       <button class="secondary" data-act="export">📤 バックアップ(JSON書き出し)</button>
       <button class="secondary" data-act="import">📥 復元(JSON読み込み)</button>
@@ -1059,6 +1065,54 @@ function vPresetEdit(){
     </div>
     <button class="primary" data-act="savePreset">保存</button>
     ${p.id?'<button class="secondary danger" data-act="delPreset">削除</button>':''}
+  </div>`;
+}
+
+/* ================= 使い方ガイド ================= */
+function vHelp(){
+  return `
+  <div class="card"><h2>🀄 このアプリでできること</h2>
+    <table>
+      <tr><th>モード</th><th>用途</th></tr>
+      <tr><td class="name">トーナメント</td><td>2〜5回戦の条件戦。条件表とオーラス判定</td></tr>
+      <tr><td class="name">対局記録</td><td>リーグ戦・研究会など自分の成績記録と推移グラフ</td></tr>
+      <tr><td class="name">順位表</td><td>公式HPの成績表を取り込んでリーグ全体の動向・ライン差を見る</td></tr>
+      <tr><td class="name">ボーダー</td><td>ワンデーなどで通過ライン想定との必要素点を計算</td></tr>
+    </table>
+    <div class="cond-note">まず「プレイヤー帳」で自分を登録し、「このプレイヤーは自分」にチェックを入れておくと各所で自動選択されます。</div>
+  </div>
+  <div class="card"><h2>🏆 トーナメント</h2>
+    <div class="s">
+    ① ホームの「＋新規大会」でルール・回戦数・通過人数(1〜3位抜け)・同点時(先着/追いつき)・同卓4名を設定<br><br>
+    ② 半荘が終わるたびにスコア入力。<b>素点入力</b>なら合計12万点の検算が働くので転記ミスをその場で発見できます。マイナスは「±」ボタンで<br><br>
+    ③ 最終回戦の前に<b>「条件表」</b>を開くと、相手ごとに「自分×相手の着順の組み合わせで素点差何点必要か」の表が出ます。<b>「転記モード」</b>で白黒のシンプル表示になるので紙に書き写してから卓に向かってください<br><br>
+    ④ さらに詰めるときは<b>「オーラス判定」</b>: 最終局開始時の持ち点4人分(起家から席順)・供託・本場・親を入れると、「ツモ○○以上」「誰から直撃○○以上」「放銃は○○点まで耐える」「流局時のテンパイ組合せ◯×」が出ます。リーチする人がいたら持ち点から1,000点引いて供託に足すこと。1位通過/2位通過などの切替ボタンで条件が変わります
+    </div>
+  </div>
+  <div class="card"><h2>📝 対局記録</h2>
+    <div class="s">
+    「＋半荘を追加」で1半荘ずつ入力します。同卓メンバーは半荘ごとに選べて、「＋新規プレイヤー」でその場で登録も可能。前の半荘のメンバーと日付は自動で引き継がれます。<br><br>
+    日付がそのまま「節」の区切りになり、一覧は節ごとにまとまります。推移グラフは自分/全員/特定の相手を切り替えられます。
+    </div>
+  </div>
+  <div class="card"><h2>📊 順位表</h2>
+    <div class="s">
+    ① 作成時に「自分の名前」を<b>公式HPの表記と同じ</b>に設定(姓名間のスペースは無視されます)<br><br>
+    ② 公式HPのリーグ成績表を範囲選択してコピー →「結果の取り込み」欄に貼り付け →「取り込む」。▲のマイナスや順位・地域・対局数の列は自動で処理されます<br><br>
+    ③ 新しい節が出たらHPからもう一度全体をコピーして<b>「全節を上書き」</b>で取り込み直すのが確実です。Xの速報などから節単位で手入力する場合は「名前 12.3 ▲5.0」の形式で<b>「節を追加」</b><br><br>
+    ④ 設定の3ライン(2段階昇級/昇級/残留の順位)を入れると、自分との差・圏内の色分け・グラフの破線が出ます<br><br>
+    ⑤ 推移グラフの比較相手は最大4人。「プレイヤー帳に追加」ボタンで、選んだ相手を対局相手として登録できます
+    </div>
+  </div>
+  <div class="card"><h2>📏 ボーダー比較</h2>
+    <div class="s">自分の現在トータルを入力し、ボーダー想定値を複数登録すると(楽観/悲観など)、それぞれについて「1着なら素点○○以上」の表が出ます。転記モード対応。</div>
+  </div>
+  <div class="card"><h2>💾 データとバックアップ</h2>
+    <div class="s">
+    データはこの端末のブラウザ内にだけ保存されます(サーバー送信なし)。<br><br>
+    <b>節や大会が終わるごとに「設定 → バックアップ(JSON書き出し)」を推奨</b>。機種変更時はそのJSONを新端末で「復元」してください。<br><br>
+    アプリは一度開けばオフラインでも動作します。オンラインで開けば自動で最新版になります。
+    </div>
   </div>`;
 }
 
@@ -1178,6 +1232,20 @@ function act(d, el){
     save(); render();
   }
   else if(A==='delRow'){ const e=ev(); e.rows = e.rows.filter(r=>r.name!==d.n); save(); render(); }
+  else if(A==='help') go({name:'help'});
+  else if(A==='addRivals'){
+    const names = (view.rivals||[]).filter(Boolean);
+    if(!names.length){ alert('比較相手が選択されていません'); return; }
+    let added = [], skipped = [];
+    names.forEach(nm=>{
+      const key = nm.replace(/\s+/g,'');
+      if(S.players.some(p=>p.name.replace(/\s+/g,'')===key)){ skipped.push(nm); return; }
+      S.players.push({id:uid(), name:nm, kana:'', org:'最高位戦', memo:''});
+      added.push(nm);
+    });
+    save();
+    alert(`${added.length ? added.join('、')+' をプレイヤー帳に追加しました(所属:最高位戦)' : '追加はありません'}${skipped.length ? `\n${skipped.join('、')} は登録済みです` : ''}`);
+  }
   else if(A==='clearRows'){ if(confirm('順位表を全て消去しますか?')){ ev().rows = []; save(); render(); } }
   else if(A==='delGame'){
     if(confirm('この半荘を削除しますか?')){
