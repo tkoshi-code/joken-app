@@ -416,8 +416,12 @@ function vNewEvent(){
     </div>
     <div id="tableOpts" style="display:none">
       <label>自分の名前(公式HPの表記と同じに)</label><input type="text" id="f_tself" value="${esc(player(S.selfId)?.name||'')}">
-      <label>昇級ライン(上位何名か・未定なら空欄)</label><input type="number" id="f_tpromote" inputmode="numeric" placeholder="例: 20">
-      <div class="cond-note">公式HPのリーグ成績表を貼り付けて、全体順位表・昇級ボーダーとの差・節ごとの推移グラフを見るモード。プレイヤー帳への登録は不要です。</div>
+      <div class="row">
+        <div><label>2段階昇級(上位何位)</label><input type="number" id="f_tpromote2" inputmode="numeric" placeholder="例: 2"></div>
+        <div><label>昇級(上位何位)</label><input type="number" id="f_tpromote" inputmode="numeric" placeholder="例: 20"></div>
+        <div><label>降級(下位何名)</label><input type="number" id="f_tdemote" inputmode="numeric" placeholder="例: 40"></div>
+      </div>
+      <div class="cond-note">公式HPのリーグ成績表を貼り付けて、全体順位表・各ラインとの差・節ごとの推移グラフを見るモード。ラインは未定なら空欄でOK(後から変更可)。</div>
     </div>
     <div id="borderOpts" style="display:none">
       <div class="cond-note">ワンデー・リーグ戦の通過ライン比較用。自分のトータルポイントとボーダー想定値を手入力するモードのため、メンバー登録は不要です。</div>
@@ -492,6 +496,8 @@ function createEvent(){
   }else if(mode === 'table'){
     e.selfName = document.getElementById('f_tself').value.trim();
     e.promote = Number(document.getElementById('f_tpromote').value) || null;
+    e.promote2 = Number(document.getElementById('f_tpromote2').value) || null;
+    e.demote = Number(document.getElementById('f_tdemote').value) || null;
     e.rows = [];
   }else{
     e.myTotal = 0; e.borders = [];
@@ -863,13 +869,21 @@ function vTable(){
   const selfKey = (e.selfName||'').replace(/\s+/g,'');
   const isSelf = r => selfKey && r.name.replace(/\s+/g,'')===selfKey;
   const selfRow = rows.find(isSelf);
-  const promote = Number(e.promote)||0;
-  const borderTotal = (promote>0 && rows.length>=promote) ? total(rows[promote-1]) : null;
+  const promote  = Number(e.promote)||0;
+  const promote2 = Number(e.promote2)||0;
+  const demote   = Number(e.demote)||0;
+  const p2Total = (promote2>0 && rows.length>=promote2) ? total(rows[promote2-1]) : null;
+  const pTotal  = (promote>0  && rows.length>=promote)  ? total(rows[promote-1])  : null;
+  // 降級ライン = 残留できる最下位(下からdemote+1番目)のTotal
+  const dTotal  = (demote>0 && rows.length>demote) ? total(rows[rows.length-demote-1]) : null;
+  const borderTotal = pTotal;
   // --- 設定+取り込み ---
   const setCard = `<div class="card"><h2>設定</h2>
+    <label>自分の名前</label><input type="text" id="t_self" class="tset" value="${esc(e.selfName||'')}">
     <div class="row">
-      <div style="flex:1.4"><label>自分の名前</label><input type="text" id="t_self" class="tset" value="${esc(e.selfName||'')}"></div>
-      <div><label>昇級ライン(位)</label><input type="number" id="t_promote" class="tset" inputmode="numeric" value="${e.promote||''}"></div>
+      <div><label>2段階昇級(位)</label><input type="number" id="t_promote2" class="tset" inputmode="numeric" value="${e.promote2||''}"></div>
+      <div><label>昇級(位)</label><input type="number" id="t_promote" class="tset" inputmode="numeric" value="${e.promote||''}"></div>
+      <div><label>降級(下位何名)</label><input type="number" id="t_demote" class="tset" inputmode="numeric" value="${e.demote||''}"></div>
     </div>
   </div>
   <div class="card no-copy"><h2>結果の取り込み</h2>
@@ -884,17 +898,25 @@ function vTable(){
   // --- 順位表 ---
   const trs = rows.map((r,ri)=>{
     const diff = borderTotal!==null ? total(r)-borderTotal : (selfRow && !isSelf(r) ? total(r)-total(selfRow) : null);
+    const zone = (promote2>0 && ri<promote2) ? 'background:#e5d5f5'
+               : (promote>0 && ri<promote) ? 'background:var(--green-lt)'
+               : (demote>0 && ri>=rows.length-demote) ? 'background:#fadadd' : '';
     return `<tr ${isSelf(r)?'style="font-weight:bold;background:var(--green-lt)"':''}>
-      <td>${ri+1}</td><td class="name" style="white-space:nowrap">${esc(r.name)}</td>
+      <td style="${zone}">${ri+1}</td><td class="name" style="white-space:nowrap">${esc(r.name)}</td>
       <td class="${total(r)>=0?'plus':'minus'}" style="white-space:nowrap">${total(r).toFixed(1)}</td>
       <td style="white-space:nowrap">${diff===null?'—':(diff>=0?'+':'')+diff.toFixed(1)}</td>
       ${Array.from({length:nSec},(_,k)=>`<td>${r.pts[k]===undefined?'':r.pts[k].toFixed(1)}</td>`).join('')}
       <td class="no-copy"><button class="small danger" data-act="delRow" data-n="${esc(r.name)}">✕</button></td></tr>`;
   }).join('');
-  const tableCard = `<div class="card"><h2>順位表(${rows.length}名)
-      ${borderTotal!==null?`<span class="badge">昇級ライン ${borderTotal.toFixed(1)}</span>`:''}</h2>
-    ${selfRow ? `<div class="totline">自分: <b>${rows.indexOf(selfRow)+1}位 ${total(selfRow).toFixed(1)}</b>
-      ${borderTotal!==null?`(ライン差 <span class="${total(selfRow)-borderTotal>=0?'plus':'minus'}">${(total(selfRow)-borderTotal>=0?'+':'')+(total(selfRow)-borderTotal).toFixed(1)}</span>)`:''}</div>` : ''}
+  const fmtd = v => `<span class="${v>=0?'plus':'minus'}">${(v>=0?'+':'')+v.toFixed(1)}</span>`;
+  const selfLines = selfRow ? [
+    p2Total!==null ? `2段階昇級ライン(${promote2}位) ${p2Total.toFixed(1)} → 差 ${fmtd(total(selfRow)-p2Total)}` : '',
+    pTotal!==null  ? `昇級ライン(${promote}位) ${pTotal.toFixed(1)} → 差 ${fmtd(total(selfRow)-pTotal)}` : '',
+    dTotal!==null  ? `降級ライン(残留${rows.length-demote}位) ${dTotal.toFixed(1)} → 差 ${fmtd(total(selfRow)-dTotal)}` : '',
+  ].filter(Boolean).map(s=>`<div class="s">${s}</div>`).join('') : '';
+  const tableCard = `<div class="card"><h2>順位表(${rows.length}名)</h2>
+    ${selfRow ? `<div class="totline">自分: <b>${rows.indexOf(selfRow)+1}位 ${total(selfRow).toFixed(1)}</b></div>${selfLines}` : ''}
+    ${(promote2>0||promote>0||demote>0) ? `<div class="cond-note">順位の色: <span style="background:#e5d5f5">■</span>2段階昇級圏 <span style="background:var(--green-lt)">■</span>昇級圏 <span style="background:#fadadd">■</span>降級圏</div>` : ''}
     <div style="overflow-x:auto">
     <table><tr><th>順位</th><th>名前</th><th>Total</th><th>${borderTotal!==null?'ライン差':'自分との差'}</th>
       ${Array.from({length:nSec},(_,k)=>`<th>${k+1}節</th>`).join('')}<th class="no-copy"></th></tr>
@@ -904,14 +926,18 @@ function vTable(){
   const cumOf = r => { let c=0; return [0, ...Array.from({length:nSec},(_,k)=>{ c+=(r.pts[k]||0); return Math.round(c*10); })]; };
   const series = [];
   if(selfRow) series.push({name:(e.selfName||'自分'), self:true, color:'#2e7d32', values:cumOf(selfRow)});
-  if(promote>0 && rows.length>=promote && nSec>0){
+  const lineAt = (idx, name, color) => { // idx: 0始まりの順位
+    if(idx<0 || idx>=rows.length || nSec===0) return;
     const bvals = [0];
     for(let k=1;k<=nSec;k++){
       const tots = rows.map(r=>r.pts.slice(0,k).reduce((a,b)=>a+(b||0),0)).sort((a,b)=>b-a);
-      bvals.push(Math.round(tots[promote-1]*10));
+      bvals.push(Math.round(tots[idx]*10));
     }
-    series.push({name:`昇級ライン(${promote}位)`, color:'#c62828', dash:true, values:bvals});
-  }
+    series.push({name, color, dash:true, values:bvals});
+  };
+  if(promote2>0) lineAt(promote2-1, `2段階昇級(${promote2}位)`, '#6a1b9a');
+  if(promote>0)  lineAt(promote-1,  `昇級(${promote}位)`, '#c62828');
+  if(demote>0)   lineAt(rows.length-demote-1, `降級(残留${rows.length-demote}位)`, '#455a64');
   const rival = rows.find(r=>r.name===view.rival);
   if(rival && !isSelf(rival)) series.push({name:rival.name, color:'#1565c0', values:cumOf(rival)});
   const rivalOpts = `<option value="">なし</option>` +
@@ -1105,7 +1131,9 @@ function bind(){
   document.querySelectorAll('.tset').forEach(el=> el.onchange = ()=>{
     const e = ev();
     e.selfName = document.getElementById('t_self').value.trim();
-    e.promote = Number(document.getElementById('t_promote').value) || null;
+    e.promote  = Number(document.getElementById('t_promote').value) || null;
+    e.promote2 = Number(document.getElementById('t_promote2').value) || null;
+    e.demote   = Number(document.getElementById('t_demote').value) || null;
     save(); render();
   });
   const rv = document.getElementById('t_rival');
