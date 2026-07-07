@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1a5c3a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>条件戦サポート</title>
+<style>
+  :root{
+    --green:#1a5c3a; --green-lt:#e8f3ed; --red:#c0392b; --blue:#1a4a7a;
+    --bg:#f5f5f2; --card:#fff; --line:#ddd; --txt:#222; --sub:#777;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+       background:var(--bg); color:var(--txt); font-size:15px;
+       padding-bottom:calc(64px + env(safe-area-inset-bottom));}
+  header{position:sticky; top:0; z-index:10; background:var(--green); color:#fff;
+         padding:calc(10px + env(safe-area-inset-top)) 14px 10px; display:flex; align-items:center; gap:10px;}
+  header h1{font-size:17px; margin:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  header .back{background:none;border:none;color:#fff;font-size:20px;padding:2px 8px;cursor:pointer;}
+  main{padding:12px; max-width:640px; margin:0 auto;}
+  .card{background:var(--card); border-radius:10px; padding:14px; margin-bottom:12px;
+        box-shadow:0 1px 3px rgba(0,0,0,.08);}
+  .card h2{font-size:15px; margin:0 0 10px; color:var(--green);}
+  .card h3{font-size:14px; margin:14px 0 6px;}
+  label{display:block; font-size:12px; color:var(--sub); margin:10px 0 3px;}
+  input[type=text],input[type=number],input[type=date],select{
+    width:100%; padding:9px; border:1px solid var(--line); border-radius:8px; font-size:16px; background:#fff;}
+  .row{display:flex; gap:8px;} .row>*{flex:1; min-width:0;}
+  button.primary{width:100%; padding:12px; background:var(--green); color:#fff; border:none;
+    border-radius:8px; font-size:16px; font-weight:bold; margin-top:12px; cursor:pointer;}
+  button.secondary{width:100%; padding:10px; background:#fff; color:var(--green); border:1.5px solid var(--green);
+    border-radius:8px; font-size:14px; font-weight:bold; margin-top:8px; cursor:pointer;}
+  button.danger{background:#fff; color:var(--red); border:1.5px solid var(--red);}
+  button.small{width:auto; padding:6px 12px; font-size:13px; margin:0;}
+  nav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--line);
+      display:flex; z-index:10; padding-bottom:env(safe-area-inset-bottom);}
+  nav button{flex:1; padding:10px 0 8px; background:none; border:none; font-size:11px; color:var(--sub); cursor:pointer;}
+  nav button .ico{display:block; font-size:20px;}
+  nav button.on{color:var(--green); font-weight:bold;}
+  table{border-collapse:collapse; width:100%; font-size:13px;}
+  th,td{border:1px solid var(--line); padding:5px 4px; text-align:center;}
+  th{background:var(--green-lt); font-weight:600;}
+  td.name{text-align:left; white-space:nowrap;}
+  .plus{color:var(--blue); font-weight:bold;} .minus{color:var(--red); font-weight:bold;}
+  .pass{background:#e8f6ec;} .fail{background:#fbeeec;}
+  .badge{display:inline-block; font-size:11px; background:var(--green-lt); color:var(--green);
+         border-radius:4px; padding:1px 6px; margin-left:6px;}
+  .listitem{display:flex; align-items:center; padding:12px 4px; border-bottom:1px solid #eee; cursor:pointer;}
+  .listitem:last-child{border-bottom:none;}
+  .listitem .grow{flex:1; min-width:0;}
+  .listitem .t{font-weight:bold;} .listitem .s{font-size:12px; color:var(--sub);}
+  .warn{background:#fff6e0; border:1px solid #eccb6b; color:#7a5b00; border-radius:8px;
+        padding:8px 10px; font-size:13px; margin-top:8px;}
+  .err{background:#fbeeec; border:1px solid #e0a9a2; color:var(--red);}
+  .ok-note{color:var(--green); font-size:13px; margin-top:6px;}
+  .matrix td{font-size:12px; padding:6px 2px;}
+  .matrix .uncond{background:#dff3e4; font-weight:bold;}
+  .matrix .impossible{background:#f3d9d5; color:#999;}
+  .cond-note{font-size:12px; color:var(--sub); margin-top:6px;}
+  /* 転記モード */
+  body.copy-mode nav, body.copy-mode .no-copy{display:none;}
+  body.copy-mode{background:#fff;}
+  body.copy-mode .card{box-shadow:none; border:1px solid #000; border-radius:0;}
+  body.copy-mode table, body.copy-mode th, body.copy-mode td{border-color:#000; font-size:14px;}
+  .seg{display:flex; border:1.5px solid var(--green); border-radius:8px; overflow:hidden; margin-top:4px;}
+  .seg button{flex:1; padding:8px; border:none; background:#fff; color:var(--green); font-size:14px; cursor:pointer;}
+  .seg button.on{background:var(--green); color:#fff; font-weight:bold;}
+  .totline{font-size:20px; font-weight:bold;}
+</style>
+</head>
+<body>
+<header><button class="back" id="btnBack" style="display:none">‹</button><h1 id="title">条件戦サポート</h1></header>
+<main id="main"></main>
+<nav id="nav">
+  <button data-v="home"><span class="ico">🀄</span>大会</button>
+  <button data-v="players"><span class="ico">👤</span>プレイヤー</button>
+  <button data-v="settings"><span class="ico">⚙️</span>設定</button>
+</nav>
+<script>
+"use strict";
+/* ================= データ ================= */
+const LSKEY = 'jokenapp_v1';
+const ORGS = ['最高位戦','連盟','協会','RMU','連合','101','その他','一般'];
+const BUILTIN = [
+  {id:'saikouisen', name:'最高位戦', start:30000, kaeshi:30000, uma:[30,10,-10,-30], oka:0,  tieRank:'split', kyotakuToTop:false, builtin:true},
+  {id:'classic',    name:'最高位戦Classic', start:30000, kaeshi:30000, uma:[12,4,-4,-12],  oka:0,  tieRank:'split', kyotakuToTop:false, builtin:true},
+  {id:'mleague',    name:'Mリーグ', start:25000, kaeshi:30000, uma:[30,10,-10,-30], oka:20, tieRank:'seat',  kyotakuToTop:true,  builtin:true},
+];
+let S = load();
+function load(){
+  try{ const d = JSON.parse(localStorage.getItem(LSKEY)); if(d) return d; }catch(e){}
+  return {players:[], customPresets:[], events:[], selfId:null};
+}
+function save(){ localStorage.setItem(LSKEY, JSON.stringify(S)); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function presets(){ return BUILTIN.concat(S.customPresets); }
+function preset(id){ return presets().find(p=>p.id===id) || BUILTIN[0]; }
+function player(id){ return S.players.find(p=>p.id===id); }
+function pname(id){ const p = player(id); return p ? p.name : '?'; }
+function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ================= 計算コア =================
+   ポイントは内部で「tenths」(0.1P単位の数値)で扱い、丸め誤差を避ける */
+const r1 = x => Math.round(x*10)/10;
+function fmtP(tenths){ // tenths -> "▲12.3" 形式
+  const v = Math.round(tenths)/10;
+  const s = (v>0?'+':'') + v.toFixed(1);
+  return s;
+}
+function fmtPt(n){ return n.toLocaleString('ja-JP'); } // 素点
+
+// 半荘計算: raws=素点4つ(席順=起家から), kyotaku=供託残(点)
+// 戻り: {pts:[tenths], ranks:[表示用着順(2.5等)], adj:[供託加算後素点]}
+function calcGame(pr, raws, kyotaku){
+  let adj = raws.slice();
+  if(pr.kyotakuToTop && kyotaku > 0){
+    let top = 0;
+    for(let i=1;i<4;i++) if(adj[i] > adj[top]) top = i; // 同点は席順先
+    adj[top] += kyotaku;
+  }
+  // 順位付け(素点降順、同点は席順昇順で仮順位)
+  const idx = [0,1,2,3].sort((a,b)=> adj[b]-adj[a] || a-b);
+  // 順位点スロット(tenths): uma + オカは1位スロットに
+  const slot = [0,1,2,3].map(r => (pr.uma[r] + (r===0 ? pr.oka : 0)) * 10);
+  const share = [0,0,0,0], rankDisp = [0,0,0,0];
+  if(pr.tieRank === 'split'){
+    let i = 0;
+    while(i < 4){
+      let j = i;
+      while(j+1 < 4 && adj[idx[j+1]] === adj[idx[i]]) j++;
+      let sum = 0; for(let k=i;k<=j;k++) sum += slot[k];
+      const avg = sum/(j-i+1), rk = (i+1+j+1)/2;
+      for(let k=i;k<=j;k++){ share[idx[k]] = avg; rankDisp[idx[k]] = rk; }
+      i = j+1;
+    }
+  }else{ // seat: 起家に近い方が上位
+    for(let r=0;r<4;r++){ share[idx[r]] = slot[r]; rankDisp[idx[r]] = r+1; }
+  }
+  const pts = adj.map((a,i)=> Math.round((a - pr.kaeshi)/100 + share[i]));
+  return {pts, ranks:rankDisp, adj};
+}
+// 大会の累計(tenths) playerIdごと
+function totals(ev){
+  const t = {};
+  ev.playerIds.forEach(id => t[id] = 0);
+  ev.games.forEach(g => {
+    const res = gamePts(ev, g);
+    if(res) g.order.forEach((pid,i)=> t[pid] += res.pts[i]);
+  });
+  return t;
+}
+function gamePts(ev, g){
+  const pr = preset(ev.presetId);
+  if(g.inputType === 'raw'){
+    if(g.raw.some(v=>v===null||v===undefined||v==='')) return null;
+    return calcGame(pr, g.raw.map(Number), Number(g.kyotaku)||0);
+  }else{
+    if(g.pts.some(v=>v===null||v===undefined||v==='')) return null;
+    const pts = g.pts.map(v=>Math.round(Number(v)*10));
+    const idx=[0,1,2,3].sort((a,b)=>pts[b]-pts[a]||a-b);
+    const ranks=[0,0,0,0]; idx.forEach((p,r)=>ranks[p]=r+1);
+    return {pts, ranks, adj:null};
+  }
+}
+/* 条件計算: 自分(me)と相手(op)のトータルtenths、着順組合せごとの必要素点差
+   tieOK: トータル同点でも自分が上になれるか */
+function condMatrix(pr, Tme, Top, tieOK){
+  const slot = r => (pr.uma[r] + (r===0 ? pr.oka : 0)) * 10;
+  const cells = [];
+  for(let rm=0; rm<4; rm++){
+    const row = [];
+    for(let ro=0; ro<4; ro++){
+      if(rm === ro){ row.push({type:'diag'}); continue; }
+      // 条件: (sMe-sOp)/100 + slot(rm)-slot(ro) + (Tme-Top) > 0 (tieOKなら>=0)
+      const base = -(slot(rm) - slot(ro) + (Tme - Top)) * 100; // 必要素点差の境界(点)
+      let D = tieOK ? Math.ceil(base/100)*100 : Math.floor(base/100)*100 + 100;
+      if(rm < ro){ // 自分が上着順 → 素点差は+100以上が前提
+        if(D <= 100) row.push({type:'uncond'});
+        else row.push({type:'need', v:D});
+      }else{ // 自分が下着順 → 素点差は-100以下が前提
+        if(D > -100) row.push({type:'impossible'});
+        else row.push({type:'within', v:-D});
+      }
+    }
+    cells.push(row);
+  }
+  // 同素点(折半)の場合: ウマが相殺されるのでトータル差そのまま
+  let tieSame = null;
+  if(pr.tieRank === 'split'){
+    tieSame = Tme > Top ? true : (Tme < Top ? false : tieOK);
+  }
+  return {cells, tieSame};
+}
+
+/* ================= 画面遷移 ================= */
+let view = {name:'home'};
+const hist = [];
+function go(v, push=true){ if(push) hist.push(view); view = v; render(); window.scrollTo(0,0); }
+function back(){ view = hist.pop() || {name:'home'}; render(); }
+document.getElementById('btnBack').onclick = back;
+document.querySelectorAll('nav button').forEach(b=>{
+  b.onclick = ()=>{ hist.length = 0; go({name:b.dataset.v}, false); };
+});
+function render(){
+  const m = document.getElementById('main');
+  document.body.classList.remove('copy-mode');
+  const topLevel = ['home','players','settings'].includes(view.name);
+  document.getElementById('btnBack').style.display = topLevel ? 'none' : '';
+  document.querySelectorAll('nav button').forEach(b=> b.classList.toggle('on', b.dataset.v===view.name));
+  const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
+             event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
+             presetEdit:vPresetEdit}[view.name];
+  m.innerHTML = V();
+  const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
+             newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
+             playerEdit:'プレイヤー編集', presetEdit:'カスタムルール'}[view.name]
+             || (view.name==='event' ? esc(ev().name) : '');
+  document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
+  bind();
+}
+function ev(){ return S.events.find(e=>e.id===view.evId); }
+
+/* ================= 大会一覧 ================= */
+function vHome(){
+  const items = S.events.slice().reverse().map(e=>{
+    const pr = preset(e.presetId);
+    const sub = e.mode==='tournament'
+      ? `${e.date}・${pr.name}・${e.rounds}回戦 ${e.passCount}位抜け`
+      : `${e.date}・${pr.name}・ボーダー比較`;
+    return `<div class="listitem" data-act="openEvent" data-id="${e.id}">
+      <div class="grow"><div class="t">${esc(e.name)}</div><div class="s">${sub}</div></div><div>›</div></div>`;
+  }).join('') || '<div class="s" style="color:var(--sub);padding:8px">まだ大会がありません</div>';
+  return `<div class="card"><h2>大会一覧</h2>${items}</div>
+    <button class="primary" data-act="newEvent">＋ 新規大会を作成</button>`;
+}
+
+/* ================= 新規大会 ================= */
+function vNewEvent(){
+  const prOpts = presets().map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const plOpts = sel => playerOptions(sel);
+  return `<div class="card">
+    <label>大会名</label><input type="text" id="f_name" placeholder="例: ○○杯 2回戦">
+    <div class="row">
+      <div><label>日付</label><input type="date" id="f_date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div><label>ルール</label><select id="f_preset">${prOpts}</select></div>
+    </div>
+    <label>モード</label>
+    <div class="seg" id="f_mode">
+      <button data-m="tournament" class="on">トーナメント</button>
+      <button data-m="border">ボーダー比較</button>
+    </div>
+    <div id="tourOpts">
+      <div class="row">
+        <div><label>回戦数</label><select id="f_rounds">${[2,3,4,5].map(n=>`<option ${n===3?'selected':''}>${n}</option>`).join('')}</select></div>
+        <div><label>通過人数</label><select id="f_pass">${[1,2,3].map(n=>`<option value="${n}" ${n===2?'selected':''}>${n}位抜け</option>`).join('')}</select></div>
+      </div>
+      <label>トータル同点時</label>
+      <div class="seg" id="f_tie">
+        <button data-m="senchaku" class="on">先着有利</button>
+        <button data-m="oitsuki">追いつき有利</button>
+      </div>
+      <h3>同卓メンバー(4名)</h3>
+      ${[0,1,2,3].map(i=>`<select id="f_p${i}" style="margin-top:6px">${plOpts()}</select>`).join('')}
+      <div class="cond-note">※「＋新規プレイヤー」で名前をその場で登録できます</div>
+      <label>自分</label><select id="f_self"></select>
+    </div>
+    <button class="primary" data-act="createEvent">作成</button>
+  </div>`;
+}
+function playerOptions(selId){
+  const opts = S.players.map(p=>`<option value="${p.id}" ${p.id===selId?'selected':''}>${esc(p.name)}${p.org?'('+esc(p.org)+')':''}</option>`).join('');
+  return `<option value="">-- 選択 --</option>${opts}<option value="__new__">＋新規プレイヤー</option>`;
+}
+function quickAddPlayer(selEl){
+  const name = prompt('プレイヤー名を入力');
+  if(!name){ selEl.value=''; return; }
+  const org = prompt(`所属を入力(番号):\n${ORGS.map((o,i)=>`${i+1}:${o}`).join(' ')}`, '8');
+  const o = ORGS[(parseInt(org)||8)-1] || '一般';
+  const p = {id:uid(), name:name.trim(), kana:'', org:o, memo:''};
+  S.players.push(p); save();
+  document.querySelectorAll('select').forEach(s=>{
+    if(s.querySelector('option[value="__new__"]')){
+      const cur = s.value === '__new__' ? '' : s.value;
+      const keep = s === selEl ? p.id : cur;
+      s.innerHTML = playerOptions(keep);
+      if(s.id==='f_self') refreshSelf();
+    }
+  });
+  refreshSelf();
+}
+function refreshSelf(){
+  const selfSel = document.getElementById('f_self');
+  if(!selfSel) return;
+  const ids = [0,1,2,3].map(i=>document.getElementById('f_p'+i)?.value).filter(v=>v && v!=='__new__');
+  const cur = selfSel.value;
+  selfSel.innerHTML = ids.map(id=>`<option value="${id}" ${id===(cur||S.selfId)?'selected':''}>${esc(pname(id))}</option>`).join('');
+}
+function createEvent(){
+  const mode = document.querySelector('#f_mode .on').dataset.m;
+  const e = {
+    id:uid(), name:document.getElementById('f_name').value.trim() || '無題の大会',
+    date:document.getElementById('f_date').value, mode,
+    presetId:document.getElementById('f_preset').value,
+  };
+  if(mode === 'tournament'){
+    const ids = [0,1,2,3].map(i=>document.getElementById('f_p'+i).value);
+    if(ids.some(v=>!v || v==='__new__')){ alert('メンバー4名を選択してください'); return; }
+    if(new Set(ids).size !== 4){ alert('同じプレイヤーが重複しています'); return; }
+    e.rounds = Number(document.getElementById('f_rounds').value);
+    e.passCount = Number(document.getElementById('f_pass').value);
+    e.tiePolicy = document.querySelector('#f_tie .on').dataset.m;
+    e.playerIds = ids;
+    e.selfId = document.getElementById('f_self').value || ids[0];
+    e.games = [];
+  }else{
+    e.myTotal = 0; e.borders = [];
+  }
+  S.events.push(e); save();
+  hist.length = 0;
+  go(e.mode==='tournament' ? {name:'event', evId:e.id} : {name:'border', evId:e.id});
+}
+
+/* ================= 大会画面(トーナメント) ================= */
+function vEvent(){
+  const e = ev(); const pr = preset(e.presetId);
+  const T = totals(e);
+  const order = e.playerIds.slice().sort((a,b)=> T[b]-T[a]);
+  const done = e.games.filter(g=>gamePts(e,g)).length;
+  const isFinalNext = done === e.rounds - 1;
+  const finished = done >= e.rounds;
+
+  // 順位表(トータル同点は tiePolicy 用に前回戦時点も見るが、表示は単純ソート)
+  const rows = order.map((pid,i)=>{
+    const rank = i+1;
+    const inPass = rank <= e.passCount;
+    const diff = rank <= e.passCount
+      ? (order[e.passCount] !== undefined ? T[pid]-T[order[e.passCount]] : 0)
+      : T[pid]-T[order[e.passCount-1]];
+    return `<tr class="${finished ? (inPass?'pass':'fail') : ''}">
+      <td>${rank}</td><td class="name">${esc(pname(pid))}${pid===e.selfId?'<span class="badge">自分</span>':''}</td>
+      <td class="${T[pid]>=0?'plus':'minus'}">${fmtP(T[pid])}</td>
+      <td>${done>0 ? fmtP(diff)+(rank<=e.passCount?'':'差') : '-'}</td></tr>`;
+  }).join('');
+
+  const gameRows = [];
+  for(let r=1; r<=e.rounds; r++){
+    const g = e.games.find(g=>g.round===r);
+    const res = g && gamePts(e,g);
+    if(res){
+      const txt = g.order.map((pid,i)=>`${esc(pname(pid))} ${fmtP(res.pts[i])}`).join(' / ');
+      gameRows.push(`<div class="listitem" data-act="openGame" data-r="${r}">
+        <div class="grow"><div class="t">${r}回戦 ✅</div><div class="s">${txt}</div></div><div>›</div></div>`);
+    }else{
+      gameRows.push(`<div class="listitem" data-act="openGame" data-r="${r}">
+        <div class="grow"><div class="t">${r}回戦</div><div class="s">未入力</div></div><div>›</div></div>`);
+    }
+  }
+  return `
+    <div class="card"><h2>現在の順位 <span class="badge">${pr.name}・${e.passCount}位抜け・${e.tiePolicy==='senchaku'?'先着有利':'追いつき有利'}</span></h2>
+      <table><tr><th>順位</th><th>名前</th><th>トータル</th><th>${finished?'差':'ボーダー差'}</th></tr>${rows}</table>
+      ${finished ? `<div class="ok-note">全${e.rounds}回戦終了。上位${e.passCount}名が通過です。</div>` : ''}
+    </div>
+    ${isFinalNext ? `<button class="primary" data-act="cond">📋 条件表を見る(最終${e.rounds}回戦前)</button>`
+      : (done>0 && !finished ? `<button class="secondary" data-act="cond">条件表(途中経過: ${done}回戦終了時点)</button>` : '')}
+    <div class="card"><h2>スコア入力</h2>${gameRows.join('')}</div>
+    <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
+}
+
+/* ================= スコア入力 ================= */
+function vGame(){
+  const e = ev(); const pr = preset(e.presetId);
+  const g = e.games.find(g=>g.round===view.round)
+    || {round:view.round, order:e.playerIds.slice(), inputType:'raw', raw:['','','',''], pts:['','','',''], kyotaku:0};
+  const t = g.inputType;
+  const rows = [0,1,2,3].map(i=>{
+    const opts = e.playerIds.map(pid=>`<option value="${pid}" ${pid===g.order[i]?'selected':''}>${esc(pname(pid))}</option>`).join('');
+    return `<div class="row" style="margin-top:6px">
+      <select id="g_p${i}" style="flex:1.3">${opts}</select>
+      <input type="number" id="g_v${i}" inputmode="numeric" placeholder="${t==='raw'?'素点':'±ポイント'}"
+        step="${t==='raw'?100:0.1}" value="${t==='raw' ? (g.raw[i]??'') : (g.pts[i]??'')}">
+    </div>`;
+  }).join('');
+  return `<div class="card">
+    <h2>${view.round}回戦 <span class="badge">${pr.name}</span></h2>
+    <div class="seg" id="g_type">
+      <button data-m="raw" class="${t==='raw'?'on':''}">素点入力(検算あり)</button>
+      <button data-m="pts" class="${t==='pts'?'on':''}">ポイント入力</button>
+    </div>
+    <div class="cond-note">上から起家→南→西→北の席順で入力してください${pr.tieRank==='seat'?'(同点時は席順で順位決定)':''}</div>
+    ${rows}
+    ${t==='raw' ? `<label>供託残り(流局時のリーチ棒など・なければ0)</label>
+      <input type="number" id="g_kyotaku" inputmode="numeric" step="1000" value="${g.kyotaku||0}">
+      <div class="cond-note">${pr.kyotakuToTop ? '※このルールでは供託残はトップの素点に自動加算されます' : '※このルールでは供託残は場から除外(トップ取りなし)'}</div>` : ''}
+    <div id="g_check"></div>
+    <button class="primary" data-act="saveGame">保存</button>
+  </div>`;
+}
+function saveGame(){
+  const e = ev(); const pr = preset(e.presetId);
+  const t = document.querySelector('#g_type .on').dataset.m;
+  const order = [0,1,2,3].map(i=>document.getElementById('g_p'+i).value);
+  if(new Set(order).size !== 4){ alert('プレイヤーが重複しています'); return; }
+  const vals = [0,1,2,3].map(i=>document.getElementById('g_v'+i).value);
+  if(vals.some(v=>v==='')){ alert('4人分のスコアを入力してください'); return; }
+  const chk = document.getElementById('g_check');
+  if(t === 'raw'){
+    const raws = vals.map(Number);
+    const kyotaku = Number(document.getElementById('g_kyotaku').value)||0;
+    const expect = pr.start*4 - (pr.kyotakuToTop ? 0 : kyotaku);
+    const sum = raws.reduce((a,b)=>a+b,0) + (pr.kyotakuToTop ? kyotaku : 0);
+    // トップ取りの場合: 入力素点+供託 = 原点×4 / 別扱いの場合: 入力素点合計 = 原点×4-供託
+    const total = raws.reduce((a,b)=>a+b,0);
+    const need = pr.start*4 - kyotaku;
+    if(total !== need){
+      chk.innerHTML = `<div class="warn err">⚠️ 検算エラー: 素点合計 ${fmtPt(total)} 点。正しくは ${fmtPt(need)} 点(原点${fmtPt(pr.start)}×4−供託${fmtPt(kyotaku)})のはずです。入力を確認してください。</div>`;
+      return;
+    }
+    upsertGame(e, {round:view.round, order, inputType:'raw', raw:raws, pts:null, kyotaku});
+  }else{
+    const pts = vals.map(Number);
+    const sumT = Math.round(pts.reduce((a,b)=>a+Math.round(b*10),0));
+    if(sumT !== 0){
+      chk.innerHTML = `<div class="warn err">⚠️ 検算エラー: 4人のポイント合計が ${fmtP(sumT)} です(0になるはず)。オカ・供託の扱いを含め確認してください。</div>`;
+      return;
+    }
+    upsertGame(e, {round:view.round, order, inputType:'pts', raw:null, pts, kyotaku:0});
+  }
+  save(); back();
+}
+function upsertGame(e, g){
+  const i = e.games.findIndex(x=>x.round===g.round);
+  if(i>=0) e.games[i] = g; else e.games.push(g);
+}
+
+/* ================= 条件表 ================= */
+function vCond(){
+  const e = ev(); const pr = preset(e.presetId);
+  const T = totals(e);
+  const done = e.games.filter(g=>gamePts(e,g)).length;
+  const me = view.meId || e.selfId;
+  const order = e.playerIds.slice().sort((a,b)=> T[b]-T[a]);
+  const myRank = order.indexOf(me)+1;
+  const opps = order.filter(pid=>pid!==me);
+  const needBeat = 4 - e.passCount;
+
+  const meOpts = e.playerIds.map(pid=>`<option value="${pid}" ${pid===me?'selected':''}>${esc(pname(pid))}</option>`).join('');
+
+  const head = `<div class="card">
+    <h2>現況(${done}回戦終了時点) <span class="badge">${pr.name}・${e.passCount}位抜け・${e.tiePolicy==='senchaku'?'先着有利':'追いつき有利'}</span></h2>
+    <table><tr><th>順位</th><th>名前</th><th>トータル</th><th>自分との差</th></tr>
+    ${order.map((pid,i)=>`<tr ${pid===me?'style="font-weight:bold;background:var(--green-lt)"':''}>
+      <td>${i+1}</td><td class="name">${esc(pname(pid))}</td>
+      <td class="${T[pid]>=0?'plus':'minus'}">${fmtP(T[pid])}</td>
+      <td>${pid===me?'—':fmtP(T[pid]-T[me])}</td></tr>`).join('')}
+    </table>
+    <div class="cond-note">通過条件: 3人中 <b>${needBeat}人</b> にトータルで勝てば ${e.passCount}位以内 = 通過</div>
+    <div class="no-copy"><label>条件の対象者</label><select id="c_me">${meOpts}</select></div>
+  </div>`;
+
+  const mats = opps.map(op=>{
+    const tieOK = e.tiePolicy==='senchaku' ? T[me] > T[op] : T[me] < T[op];
+    const {cells, tieSame} = condMatrix(pr, T[me], T[op], tieOK);
+    const rows = cells.map((row,rm)=>{
+      const tds = row.map(c=>{
+        if(c.type==='diag') return '<td>—</td>';
+        if(c.type==='uncond') return '<td class="uncond">無条件◯</td>';
+        if(c.type==='impossible') return '<td class="impossible">×</td>';
+        if(c.type==='need') return `<td>${fmtPt(c.v)}<br>以上</td>`;
+        return `<td>${fmtPt(c.v)}<br>差以内</td>`;
+      }).join('');
+      return `<tr><th>自分${rm+1}着</th>${tds}</tr>`;
+    }).join('');
+    return `<div class="card">
+      <h2>vs ${esc(pname(op))} <span class="badge">現在差 ${fmtP(T[me]-T[op])}</span></h2>
+      <table class="matrix">
+        <tr><th></th><th>相手1着</th><th>相手2着</th><th>相手3着</th><th>相手4着</th></tr>
+        ${rows}
+      </table>
+      <div class="cond-note">数値=最終戦での必要素点差(自分−相手)。「無条件◯」=その着順同士なら素点差不問で勝ち。「×」=その着順同士では届かない。
+      ${tieSame!==null ? `同素点(着順折半)の場合: <b>${tieSame?'◯ 勝ち':'× 負け'}</b>(ウマ相殺でトータル差${fmtP(T[me]-T[op])}のまま)。`:''}
+      トータル同点時は${tieOK?'<b>自分が上</b>':'<b>相手が上</b>'}(${e.tiePolicy==='senchaku'?'先着有利':'追いつき有利'})。</div>
+    </div>`;
+  }).join('');
+
+  return head + mats + `
+    <button class="primary no-copy" data-act="copyMode">📝 転記モード(紙に書き写す)</button>
+    <div class="cond-note no-copy" style="margin-top:8px">転記モードでは画面を白黒シンプル表示にします。画面を戻るには転記モード中に画面をタップしてください。</div>`;
+}
+
+/* ================= ボーダー比較モード ================= */
+function vBorder(){
+  const e = ev(); const pr = preset(e.presetId);
+  const slot = r => (pr.uma[r] + (r===0 ? pr.oka : 0)) * 10;
+  const borderRows = (e.borders||[]).map((b,bi)=>{
+    const cells = [0,1,2,3].map(r=>{
+      // 必要: myTotal + (s-kaeshi)/100 + slot(r) >= border*10 (同点は要確認なので「以上」表記)
+      const needT = Math.round(b.value*10) - Math.round(e.myTotal*10) - slot(r);
+      const needRaw = Math.ceil(needT*100/100)*100 * 1 ; // needT(0.1P)→点
+      const raw = pr.kaeshi + needT*100;
+      const rawCeil = Math.ceil(raw/100)*100;
+      if(rawCeil <= 0) return `<td class="uncond">無条件◯</td>`;
+      return `<td>${fmtPt(rawCeil)}<br>以上</td>`;
+    }).join('');
+    return `<tr><td class="name">${esc(b.label||('想定'+(bi+1)))}<br><b>${b.value.toFixed(1)}</b></td>${cells}
+      <td class="no-copy"><button class="small danger" data-act="delBorder" data-i="${bi}">✕</button></td></tr>`;
+  }).join('');
+  return `<div class="card">
+      <h2>自分の現在トータル <span class="badge">${pr.name}</span></h2>
+      <div class="row"><input type="number" id="b_total" step="0.1" value="${e.myTotal}">
+      <button class="small primary" style="margin:0;flex:0.4" data-act="saveTotal">更新</button></div>
+      <div class="totline" style="margin-top:8px" >現在: <span class="${e.myTotal>=0?'plus':'minus'}">${(e.myTotal>=0?'+':'')+Number(e.myTotal).toFixed(1)}</span></div>
+    </div>
+    <div class="card">
+      <h2>通過ライン想定と必要素点</h2>
+      <table><tr><th>ボーダー</th><th>1着なら</th><th>2着なら</th><th>3着なら</th><th>4着なら</th><th class="no-copy"></th></tr>
+      ${borderRows || '<tr><td colspan="6" style="color:var(--sub)">ボーダー想定値を追加してください</td></tr>'}</table>
+      <div class="cond-note">最終戦で必要な素点(終局時持ち点)。ボーダーちょうどの扱い(同点通過か)は大会規定に合わせて判断してください(表は「ボーダー以上」で計算)。</div>
+      <div class="row no-copy" style="margin-top:10px">
+        <input type="text" id="b_label" placeholder="ラベル(例:楽観)">
+        <input type="number" id="b_value" step="0.1" placeholder="ボーダーP">
+        <button class="small primary" style="margin:0;flex:0.5" data-act="addBorder">追加</button>
+      </div>
+    </div>
+    <button class="primary no-copy" data-act="copyMode">📝 転記モード</button>
+    <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
+}
+
+/* ================= プレイヤー帳 ================= */
+function vPlayers(){
+  const stats = playerStats();
+  const items = S.players.slice().sort((a,b)=>(a.kana||a.name).localeCompare(b.kana||b.name,'ja')).map(p=>{
+    const st = stats[p.id];
+    const s = st ? `${st.games}対局・平均着順${st.avgRank.toFixed(2)}・通算${fmtP(st.total)}` : '対局記録なし';
+    return `<div class="listitem" data-act="editPlayer" data-id="${p.id}">
+      <div class="grow"><div class="t">${esc(p.name)}<span class="badge">${esc(p.org||'')}</span>${p.id===S.selfId?'<span class="badge">自分</span>':''}</div>
+      <div class="s">${s}</div></div><div>›</div></div>`;
+  }).join('') || '<div style="color:var(--sub);padding:8px">まだ登録がありません</div>';
+  return `<div class="card"><h2>プレイヤー帳(${S.players.length}名)</h2>${items}</div>
+    <button class="primary" data-act="addPlayer">＋ プレイヤー登録</button>`;
+}
+function playerStats(){
+  const st = {};
+  S.events.filter(e=>e.mode==='tournament').forEach(e=>{
+    e.games.forEach(g=>{
+      const res = gamePts(e,g); if(!res) return;
+      g.order.forEach((pid,i)=>{
+        st[pid] = st[pid] || {games:0, rankSum:0, total:0};
+        st[pid].games++; st[pid].rankSum += res.ranks[i]; st[pid].total += res.pts[i];
+      });
+    });
+  });
+  Object.values(st).forEach(s=> s.avgRank = s.rankSum/s.games);
+  return st;
+}
+function vPlayerEdit(){
+  const p = player(view.pid) || {id:null, name:'', kana:'', org:'一般', memo:''};
+  const orgOpts = ORGS.map(o=>`<option ${o===p.org?'selected':''}>${o}</option>`).join('');
+  // 対戦履歴
+  let histHtml = '';
+  if(p.id){
+    const rows = [];
+    S.events.filter(e=>e.mode==='tournament').slice().reverse().forEach(e=>{
+      e.games.forEach(g=>{
+        const i = g.order.indexOf(p.id); if(i<0) return;
+        const res = gamePts(e,g); if(!res) return;
+        rows.push(`<tr><td class="name">${esc(e.name)} ${g.round}回戦</td><td>${res.ranks[i]}着</td>
+          <td class="${res.pts[i]>=0?'plus':'minus'}">${fmtP(res.pts[i])}</td></tr>`);
+      });
+    });
+    if(rows.length) histHtml = `<div class="card"><h2>対戦履歴</h2><table>
+      <tr><th>対局</th><th>着順</th><th>P</th></tr>${rows.join('')}</table></div>`;
+  }
+  return `<div class="card">
+    <label>名前</label><input type="text" id="p_name" value="${esc(p.name)}">
+    <label>読み仮名(並び順用)</label><input type="text" id="p_kana" value="${esc(p.kana)}">
+    <label>所属</label><select id="p_org">${orgOpts}</select>
+    <label>メモ</label><input type="text" id="p_memo" value="${esc(p.memo)}" placeholder="打ち筋メモなど">
+    <label><input type="checkbox" id="p_self" ${p.id===S.selfId?'checked':''} style="width:auto"> このプレイヤーは自分</label>
+    <button class="primary" data-act="savePlayer">保存</button>
+    ${p.id?'<button class="secondary danger" data-act="delPlayer">削除</button>':''}
+  </div>${histHtml}`;
+}
+
+/* ================= 設定 ================= */
+function vSettings(){
+  const customs = S.customPresets.map(p=>`<div class="listitem" data-act="editPreset" data-id="${p.id}">
+    <div class="grow"><div class="t">${esc(p.name)}</div>
+    <div class="s">原点${fmtPt(p.start)}/返し${fmtPt(p.kaeshi)}・ウマ${p.uma.join('/')}・オカ${p.oka}</div></div><div>›</div></div>`).join('');
+  return `<div class="card"><h2>ルールプリセット</h2>
+      ${BUILTIN.map(p=>`<div class="listitem"><div class="grow"><div class="t">${p.name}</div>
+        <div class="s">原点${fmtPt(p.start)}/返し${fmtPt(p.kaeshi)}・ウマ${p.uma.join('/')}・オカ${p.oka}・同点${p.tieRank==='split'?'折半':'起家順'}・供託${p.kyotakuToTop?'トップ取り':'別扱い'}</div></div></div>`).join('')}
+      ${customs}
+      <button class="secondary" data-act="newPreset">＋ カスタムルール追加</button>
+    </div>
+    <div class="card"><h2>データ管理</h2>
+      <button class="secondary" data-act="export">📤 バックアップ(JSON書き出し)</button>
+      <button class="secondary" data-act="import">📥 復元(JSON読み込み)</button>
+      <input type="file" id="importFile" accept=".json" style="display:none">
+      <div class="cond-note">データはこの端末のブラウザ内にのみ保存されます。機種変更前に必ず書き出してください。</div>
+    </div>
+    <div class="cond-note">条件戦サポート v1.0</div>`;
+}
+function vPresetEdit(){
+  const p = S.customPresets.find(x=>x.id===view.pid)
+    || {id:null, name:'', start:30000, kaeshi:30000, uma:[30,10,-10,-30], oka:0, tieRank:'split', kyotakuToTop:false};
+  return `<div class="card">
+    <label>名称</label><input type="text" id="r_name" value="${esc(p.name)}">
+    <div class="row">
+      <div><label>配給原点</label><input type="number" id="r_start" value="${p.start}" step="1000"></div>
+      <div><label>返し点</label><input type="number" id="r_kaeshi" value="${p.kaeshi}" step="1000"></div>
+    </div>
+    <label>順位点(1着〜4着)</label>
+    <div class="row">${[0,1,2,3].map(i=>`<input type="number" id="r_uma${i}" value="${p.uma[i]}">`).join('')}</div>
+    <label>オカ(トップに加算P)</label><input type="number" id="r_oka" value="${p.oka}">
+    <label>半荘内同点時</label>
+    <div class="seg" id="r_tie">
+      <button data-m="split" class="${p.tieRank==='split'?'on':''}">順位点折半</button>
+      <button data-m="seat" class="${p.tieRank==='seat'?'on':''}">起家に近い方が上位</button>
+    </div>
+    <label>供託残り</label>
+    <div class="seg" id="r_kyo">
+      <button data-m="no" class="${!p.kyotakuToTop?'on':''}">別扱い(場から除外)</button>
+      <button data-m="top" class="${p.kyotakuToTop?'on':''}">トップ取り</button>
+    </div>
+    <button class="primary" data-act="savePreset">保存</button>
+    ${p.id?'<button class="secondary danger" data-act="delPreset">削除</button>':''}
+  </div>`;
+}
+
+/* ================= イベントバインド ================= */
+function bind(){
+  document.querySelectorAll('.seg').forEach(seg=>{
+    seg.querySelectorAll('button').forEach(b=> b.onclick = ()=>{
+      seg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on');
+      if(seg.id==='f_mode') document.getElementById('tourOpts').style.display = b.dataset.m==='tournament'?'':'none';
+      if(seg.id==='g_type'){ const e=ev(); const g=e.games.find(g=>g.round===view.round);
+        // 切替時に入力タイプだけ変えて再描画
+        const tmp = g ? {...g, inputType:b.dataset.m} : null;
+        if(tmp) upsertGame(e,tmp); else e.games.push({round:view.round, order:e.playerIds.slice(), inputType:b.dataset.m, raw:['','','',''], pts:['','','',''], kyotaku:0});
+        render();
+      }
+    });
+  });
+  [0,1,2,3].forEach(i=>{
+    const s = document.getElementById('f_p'+i);
+    if(s) s.onchange = ()=>{ if(s.value==='__new__') quickAddPlayer(s); else refreshSelf(); };
+  });
+  if(document.getElementById('f_self')) refreshSelf();
+  const cme = document.getElementById('c_me');
+  if(cme) cme.onchange = ()=>{ view.meId = cme.value; render(); };
+  document.querySelectorAll('[data-act]').forEach(el=>{
+    el.onclick = (evt)=>{ evt.stopPropagation(); act(el.dataset, el); };
+  });
+}
+function act(d, el){
+  const A = d.act;
+  if(A==='newEvent') go({name:'newEvent'});
+  else if(A==='createEvent') createEvent();
+  else if(A==='openEvent'){ const e = S.events.find(x=>x.id===d.id);
+    go(e.mode==='tournament' ? {name:'event', evId:e.id} : {name:'border', evId:e.id}); }
+  else if(A==='openGame') go({name:'game', evId:view.evId, round:Number(d.r)});
+  else if(A==='saveGame') saveGame();
+  else if(A==='cond') go({name:'cond', evId:view.evId});
+  else if(A==='copyMode'){
+    document.body.classList.add('copy-mode');
+    const off = ()=>{ document.body.classList.remove('copy-mode'); document.body.removeEventListener('click', off, true); };
+    setTimeout(()=> document.body.addEventListener('click', off, true), 300);
+  }
+  else if(A==='delEvent'){ if(confirm('この大会を削除しますか?')){ S.events = S.events.filter(x=>x.id!==view.evId); save(); hist.length=0; go({name:'home'},false);} }
+  else if(A==='addPlayer') go({name:'playerEdit', pid:null});
+  else if(A==='editPlayer') go({name:'playerEdit', pid:d.id});
+  else if(A==='savePlayer'){
+    const name = document.getElementById('p_name').value.trim();
+    if(!name){ alert('名前を入力してください'); return; }
+    let p = player(view.pid);
+    if(!p){ p = {id:uid()}; S.players.push(p); }
+    p.name = name; p.kana = document.getElementById('p_kana').value.trim();
+    p.org = document.getElementById('p_org').value; p.memo = document.getElementById('p_memo').value;
+    if(document.getElementById('p_self').checked) S.selfId = p.id;
+    else if(S.selfId===p.id) S.selfId = null;
+    save(); back();
+  }
+  else if(A==='delPlayer'){
+    const used = S.events.some(e=> (e.playerIds||[]).includes(view.pid));
+    if(used){ alert('大会記録があるプレイヤーは削除できません'); return; }
+    if(confirm('削除しますか?')){ S.players = S.players.filter(p=>p.id!==view.pid); save(); back(); }
+  }
+  else if(A==='newPreset') go({name:'presetEdit', pid:null});
+  else if(A==='editPreset') go({name:'presetEdit', pid:d.id});
+  else if(A==='savePreset'){
+    let p = S.customPresets.find(x=>x.id===view.pid);
+    if(!p){ p = {id:'c_'+uid()}; S.customPresets.push(p); }
+    p.name = document.getElementById('r_name').value.trim()||'カスタム';
+    p.start = Number(document.getElementById('r_start').value);
+    p.kaeshi = Number(document.getElementById('r_kaeshi').value);
+    p.uma = [0,1,2,3].map(i=>Number(document.getElementById('r_uma'+i).value));
+    p.oka = Number(document.getElementById('r_oka').value);
+    p.tieRank = document.querySelector('#r_tie .on').dataset.m;
+    p.kyotakuToTop = document.querySelector('#r_kyo .on').dataset.m==='top';
+    save(); back();
+  }
+  else if(A==='delPreset'){
+    if(S.events.some(e=>e.presetId===view.pid)){ alert('このルールを使う大会があるため削除できません'); return; }
+    if(confirm('削除しますか?')){ S.customPresets = S.customPresets.filter(x=>x.id!==view.pid); save(); back(); }
+  }
+  else if(A==='saveTotal'){ ev().myTotal = Number(document.getElementById('b_total').value)||0; save(); render(); }
+  else if(A==='addBorder'){
+    const v = Number(document.getElementById('b_value').value);
+    if(isNaN(v)){ alert('ボーダー値を入力してください'); return; }
+    ev().borders.push({label:document.getElementById('b_label').value.trim(), value:v});
+    save(); render();
+  }
+  else if(A==='delBorder'){ ev().borders.splice(Number(d.i),1); save(); render(); }
+  else if(A==='export'){
+    const blob = new Blob([JSON.stringify(S,null,1)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `joken-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+  }
+  else if(A==='import'){
+    const f = document.getElementById('importFile');
+    f.onchange = ()=>{
+      const file = f.files[0]; if(!file) return;
+      const rd = new FileReader();
+      rd.onload = ()=>{
+        try{
+          const d = JSON.parse(rd.result);
+          if(!d.players || !d.events) throw 0;
+          if(confirm('現在のデータを読み込んだ内容で置き換えます。よろしいですか?')){ S = d; save(); render(); alert('復元しました'); }
+        }catch(e){ alert('ファイルを読み込めませんでした'); }
+      };
+      rd.readAsText(file);
+    };
+    f.click();
+  }
+}
+render();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
