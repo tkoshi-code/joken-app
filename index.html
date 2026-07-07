@@ -363,12 +363,12 @@ function render(){
   document.querySelectorAll('nav button').forEach(b=> b.classList.toggle('on', b.dataset.v===view.name));
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
-             presetEdit:vPresetEdit, final:vFinal}[view.name];
+             presetEdit:vPresetEdit, final:vFinal, league:vLeague}[view.name];
   m.innerHTML = V();
   const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定'}[view.name]
-             || (view.name==='event' ? esc(ev().name) : '');
+             || (['event','league'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
   bind();
 }
@@ -380,6 +380,8 @@ function vHome(){
     const pr = preset(e.presetId);
     const sub = e.mode==='tournament'
       ? `${e.date}・${pr.name}・${e.rounds}回戦 ${e.passCount}位抜け`
+      : e.mode==='league'
+      ? `${e.date}・${pr.name}・記録 ${e.games.length}半荘`
       : `${e.date}・${pr.name}・ボーダー比較`;
     return `<div class="listitem" data-act="openEvent" data-id="${e.id}">
       <div class="grow"><div class="t">${esc(e.name)}</div><div class="s">${sub}</div></div><div>›</div></div>`;
@@ -401,7 +403,12 @@ function vNewEvent(){
     <label>モード</label>
     <div class="seg" id="f_mode">
       <button data-m="tournament" class="on">トーナメント</button>
+      <button data-m="league">リーグ戦(記録)</button>
       <button data-m="border">ボーダー比較</button>
+    </div>
+    <div id="leagueOpts" style="display:none">
+      <label>自分</label><select id="f_lself">${plOpts(S.selfId)}</select>
+      <div class="cond-note">リーグ戦・研究会などの成績記録用。半荘を追加していくと累計と推移グラフが見られます。同卓メンバーは半荘ごとに選択できます。</div>
     </div>
     <div id="tourOpts">
       <div class="row">
@@ -466,13 +473,18 @@ function createEvent(){
     e.playerIds = ids;
     e.selfId = document.getElementById('f_self').value || ids[0];
     e.games = [];
+  }else if(mode === 'league'){
+    const self = document.getElementById('f_lself').value;
+    if(!self || self==='__new__'){ alert('「自分」を選択してください'); return; }
+    e.selfId = self; e.games = [];
   }else{
     e.myTotal = 0; e.borders = [];
   }
   S.events.push(e); save();
   hist.length = 0;
-  go(e.mode==='tournament' ? {name:'event', evId:e.id} : {name:'border', evId:e.id});
+  go({name:evView(e), evId:e.id});
 }
+function evView(e){ return e.mode==='tournament' ? 'event' : e.mode==='league' ? 'league' : 'border'; }
 
 /* ================= 大会画面(トーナメント) ================= */
 function vEvent(){
@@ -522,13 +534,24 @@ function vEvent(){
 }
 
 /* ================= スコア入力 ================= */
+function defaultGame(e, round){
+  const base = {round, inputType:'raw', raw:['','','',''], pts:['','','',''], kyotaku:0};
+  if(e.mode === 'league'){
+    const last = e.games[e.games.length-1];
+    base.order = last ? last.order.slice() : [e.selfId,'','',''];
+    base.date = last?.date || new Date().toISOString().slice(0,10);
+  } else base.order = e.playerIds.slice();
+  return base;
+}
 function vGame(){
   const e = ev(); const pr = preset(e.presetId);
-  const g = e.games.find(g=>g.round===view.round)
-    || {round:view.round, order:e.playerIds.slice(), inputType:'raw', raw:['','','',''], pts:['','','',''], kyotaku:0};
+  const isLg = e.mode === 'league';
+  const g = e.games.find(g=>g.round===view.round) || defaultGame(e, view.round);
   const t = g.inputType;
   const rows = [0,1,2,3].map(i=>{
-    const opts = e.playerIds.map(pid=>`<option value="${pid}" ${pid===g.order[i]?'selected':''}>${esc(pname(pid))}</option>`).join('');
+    const opts = isLg
+      ? playerOptions(g.order[i])
+      : e.playerIds.map(pid=>`<option value="${pid}" ${pid===g.order[i]?'selected':''}>${esc(pname(pid))}</option>`).join('');
     return `<div class="row" style="margin-top:6px">
       <select id="g_p${i}" style="flex:1.3">${opts}</select>
       <input type="number" id="g_v${i}" inputmode="${t==='raw'?'numeric':'decimal'}" placeholder="${t==='raw'?'素点':'±ポイント'}"
@@ -538,11 +561,12 @@ function vGame(){
     </div>`;
   }).join('');
   return `<div class="card">
-    <h2>${view.round}回戦 <span class="badge">${pr.name}</span></h2>
+    <h2>${isLg?`第${view.round}半荘`:`${view.round}回戦`} <span class="badge">${pr.name}</span></h2>
     <div class="seg" id="g_type">
       <button data-m="raw" class="${t==='raw'?'on':''}">素点入力(検算あり)</button>
       <button data-m="pts" class="${t==='pts'?'on':''}">ポイント入力</button>
     </div>
+    ${isLg?`<label>対局日(節)</label><input type="date" id="g_date" value="${g.date||new Date().toISOString().slice(0,10)}">`:''}
     <div class="cond-note">上から起家→南→西→北の席順で入力してください${pr.tieRank==='seat'?'(同点時は席順で順位決定)':''}</div>
     ${rows}
     ${t==='raw' ? `<label>供託残り(流局時のリーチ棒など・なければ0)</label>
@@ -550,13 +574,16 @@ function vGame(){
       <div class="cond-note">${pr.kyotakuToTop ? '※このルールでは供託残はトップの素点に自動加算されます' : '※このルールでは供託残は場から除外(トップ取りなし)'}</div>` : ''}
     <div id="g_check"></div>
     <button class="primary" data-act="saveGame">保存</button>
+    ${isLg && e.games.some(x=>x.round===view.round) ? '<button class="secondary danger" data-act="delGame">この半荘を削除</button>' : ''}
   </div>`;
 }
 function saveGame(){
   const e = ev(); const pr = preset(e.presetId);
   const t = document.querySelector('#g_type .on').dataset.m;
   const order = [0,1,2,3].map(i=>document.getElementById('g_p'+i).value);
+  if(order.some(v=>!v || v==='__new__')){ alert('4人のプレイヤーを選択してください'); return; }
   if(new Set(order).size !== 4){ alert('プレイヤーが重複しています'); return; }
+  const extra = e.mode==='league' ? {date: document.getElementById('g_date').value || new Date().toISOString().slice(0,10)} : {};
   const vals = [0,1,2,3].map(i=>document.getElementById('g_v'+i).value);
   if(vals.some(v=>v==='')){ alert('4人分のスコアを入力してください'); return; }
   const chk = document.getElementById('g_check');
@@ -572,7 +599,7 @@ function saveGame(){
       chk.innerHTML = `<div class="warn err">⚠️ 検算エラー: 素点合計 ${fmtPt(total)} 点。正しくは ${fmtPt(need)} 点(原点${fmtPt(pr.start)}×4−供託${fmtPt(kyotaku)})のはずです。入力を確認してください。</div>`;
       return;
     }
-    upsertGame(e, {round:view.round, order, inputType:'raw', raw:raws, pts:null, kyotaku});
+    upsertGame(e, {round:view.round, order, inputType:'raw', raw:raws, pts:null, kyotaku, ...extra});
   }else{
     const pts = vals.map(Number);
     const sumT = Math.round(pts.reduce((a,b)=>a+Math.round(b*10),0));
@@ -580,7 +607,7 @@ function saveGame(){
       chk.innerHTML = `<div class="warn err">⚠️ 検算エラー: 4人のポイント合計が ${fmtP(sumT)} です(0になるはず)。オカ・供託の扱いを含め確認してください。</div>`;
       return;
     }
-    upsertGame(e, {round:view.round, order, inputType:'pts', raw:null, pts, kyotaku:0});
+    upsertGame(e, {round:view.round, order, inputType:'pts', raw:null, pts, kyotaku:0, ...extra});
   }
   save(); back();
 }
@@ -682,6 +709,98 @@ function vBorder(){
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
 }
 
+/* ================= リーグ戦(記録)モード ================= */
+const CHART_COLORS = ['#2e7d32','#1565c0','#c62828','#ef6c00','#6a1b9a','#00838f','#5d4037','#455a64'];
+function vLeague(){
+  const e = ev(); const pr = preset(e.presetId);
+  const games = e.games.slice().sort((a,b)=>a.round-b.round).filter(g=>gamePts(e,g));
+  // --- 自分の通算成績 ---
+  let cum=0, n=0, rankSum=0; const dist={1:0,2:0,3:0,4:0};
+  games.forEach(g=>{
+    const r = gamePts(e,g); const i = g.order.indexOf(e.selfId); if(i<0) return;
+    n++; cum += r.pts[i]; const rk = r.ranks[i]; rankSum += rk;
+    if(Number.isInteger(rk)) dist[rk]++; else { dist[Math.floor(rk)]+=0.5; dist[Math.ceil(rk)]+=0.5; }
+  });
+  const fmtD = v => Number.isInteger(v) ? v : v.toFixed(1);
+  const statCard = `<div class="card"><h2>${esc(pname(e.selfId))} の通算 <span class="badge">${esc(pr.name)}</span></h2>
+    <div class="totline">累計: <span class="${cum>=0?'plus':'minus'}" style="font-size:26px;font-weight:bold">${fmtP(cum)}</span></div>
+    ${n ? `<table style="margin-top:8px"><tr><th>対局</th><th>平均着順</th><th>トップ</th><th>2着</th><th>3着</th><th>ラス</th></tr>
+      <tr><td>${n}</td><td>${(rankSum/n).toFixed(2)}</td>
+      <td>${fmtD(dist[1])}回<br>${(dist[1]/n*100).toFixed(0)}%</td><td>${fmtD(dist[2])}回<br>${(dist[2]/n*100).toFixed(0)}%</td>
+      <td>${fmtD(dist[3])}回<br>${(dist[3]/n*100).toFixed(0)}%</td><td>${fmtD(dist[4])}回<br>${(dist[4]/n*100).toFixed(0)}%</td></tr></table>
+      <div class="cond-note">同点折半の着順(2.5着など)は0.5回ずつで集計</div>` : ''}
+  </div>`;
+  // --- 推移グラフ ---
+  const parts = [...new Set(games.flatMap(g=>g.order))];
+  const plotId = (view.plotId && (view.plotId==='all' || parts.includes(view.plotId))) ? view.plotId : e.selfId;
+  const series = (plotId==='all' ? parts : [plotId]).map(pid=>{
+    let c = 0;
+    return {name:pname(pid), self:pid===e.selfId, color:CHART_COLORS[parts.indexOf(pid)%CHART_COLORS.length],
+      values:[0, ...games.map(g=>{ const r=gamePts(e,g); const i=g.order.indexOf(pid); if(i>=0) c+=r.pts[i]; return c; })]};
+  });
+  const plotOpts = `<option value="${e.selfId}" ${plotId===e.selfId?'selected':''}>${esc(pname(e.selfId))}(自分)</option>
+    <option value="all" ${plotId==='all'?'selected':''}>全員</option>
+    ${parts.filter(p=>p!==e.selfId).map(p=>`<option value="${p}" ${plotId===p?'selected':''}>${esc(pname(p))}</option>`).join('')}`;
+  const chartCard = `<div class="card"><h2>ポイント推移</h2>
+    ${games.length ? lineChart(series) : '<div class="cond-note">半荘を入力するとグラフが表示されます</div>'}
+    <div class="no-copy"><label>表示対象</label><select id="lg_plot">${plotOpts}</select></div>
+  </div>`;
+  // --- 対局記録(日付=節ごと) ---
+  const sorted = e.games.slice().sort((a,b)=>a.round-b.round);
+  const dates = [...new Set(sorted.map(g=>g.date||''))];
+  const items = [];
+  dates.forEach((dt,di)=>{
+    const label = dt ? `第${di+1}節 ${dt.slice(5).replace('-','/')}` : '日付未設定';
+    items.push(`<div class="s" style="margin-top:10px;color:var(--sub);font-weight:bold">${label}</div>`);
+    sorted.filter(g=>(g.date||'')===dt).forEach(g=>{
+      const r = gamePts(e,g);
+      const i = r ? g.order.indexOf(e.selfId) : -1;
+      const mine = r ? (i>=0 ? `${r.ranks[i]}着 ${fmtP(r.pts[i])}` : '(自分不参加)') : '未入力';
+      const cls = (r && i>=0) ? (r.pts[i]>=0?'plus':'minus') : '';
+      const sub = r ? g.order.map((pid,j)=>`${esc(pname(pid))} ${fmtP(r.pts[j])}`).join(' / ') : '';
+      items.push(`<div class="listitem" data-act="openGame" data-r="${g.round}">
+        <div class="grow"><div class="t">第${g.round}半荘 <span class="${cls}">${mine}</span></div>
+        <div class="s">${sub}</div></div><div>›</div></div>`);
+    });
+  });
+  const nextRound = e.games.reduce((m,g)=>Math.max(m,g.round),0) + 1;
+  return statCard + chartCard + `
+    <div class="card"><h2>対局記録</h2>${items.join('') || '<div style="color:var(--sub);padding:8px">まだ対局がありません</div>'}</div>
+    <button class="primary" data-act="openGame" data-r="${nextRound}">＋ 半荘を追加</button>
+    <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
+}
+function lineChart(series){
+  const W=680, H=320, L=52, R=14, T=14, B=30;
+  const n = Math.max(...series.map(s=>s.values.length));
+  let mn=0, mx=0;
+  series.forEach(s=>s.values.forEach(v=>{ if(v<mn)mn=v; if(v>mx)mx=v; }));
+  if(mx===mn){ mx+=100; mn-=100; }
+  const pad=(mx-mn)*0.08; mx+=pad; mn-=pad;
+  const X=i=> L+(W-L-R)*(n<=1?0:i/(n-1));
+  const Y=v=> T+(H-T-B)*(1-(v-mn)/(mx-mn));
+  // 目盛り(内部値は0.1P単位 → P表示)
+  const rawStep=(mx-mn)/4.5, mag=Math.pow(10,Math.floor(Math.log10(rawStep)));
+  const step=[1,2,2.5,5,10].map(m=>m*mag).find(s=>s>=rawStep)||mag*10;
+  let grid='';
+  for(let v=Math.ceil(mn/step)*step; v<=mx; v+=step){
+    const y=Y(v), zero=Math.abs(v)<1e-9;
+    grid+=`<line x1="${L}" y1="${y.toFixed(1)}" x2="${W-R}" y2="${y.toFixed(1)}" stroke="${zero?'#999':'#e3e3e3'}" stroke-width="${zero?1.5:1}"/>
+      <text x="${L-6}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="11" fill="#666">${(v/10).toFixed(0)}</text>`;
+  }
+  const xt=Math.max(1, Math.ceil((n-1)/10));
+  let xax='';
+  for(let i=xt; i<n; i+=xt) xax+=`<text x="${X(i).toFixed(1)}" y="${H-B+16}" text-anchor="middle" font-size="11" fill="#666">${i}</text>`;
+  const lines=series.map(s=>{
+    const pts=s.values.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+    const dots=(n<=40) ? s.values.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" fill="${s.color}"/>`).join('') : '';
+    return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.self?3:1.8}"/>${dots}`;
+  }).join('');
+  const legend=series.length>1 ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${series.map(s=>
+    `<span style="font-size:12px"><span style="display:inline-block;width:14px;height:3px;background:${s.color};vertical-align:middle;margin-right:3px"></span>${esc(s.name)}</span>`).join('')}</div>` : '';
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${grid}${xax}${lines}</svg>${legend}
+    <div class="cond-note">縦軸: ポイント / 横軸: 半荘数</div>`;
+}
+
 /* ================= プレイヤー帳 ================= */
 function vPlayers(){
   const stats = playerStats();
@@ -697,7 +816,7 @@ function vPlayers(){
 }
 function playerStats(){
   const st = {};
-  S.events.filter(e=>e.mode==='tournament').forEach(e=>{
+  S.events.filter(e=>e.mode==='tournament'||e.mode==='league').forEach(e=>{
     e.games.forEach(g=>{
       const res = gamePts(e,g); if(!res) return;
       g.order.forEach((pid,i)=>{
@@ -716,11 +835,12 @@ function vPlayerEdit(){
   let histHtml = '';
   if(p.id){
     const rows = [];
-    S.events.filter(e=>e.mode==='tournament').slice().reverse().forEach(e=>{
+    S.events.filter(e=>e.mode==='tournament'||e.mode==='league').slice().reverse().forEach(e=>{
       e.games.forEach(g=>{
         const i = g.order.indexOf(p.id); if(i<0) return;
         const res = gamePts(e,g); if(!res) return;
-        rows.push(`<tr><td class="name">${esc(e.name)} ${g.round}回戦</td><td>${res.ranks[i]}着</td>
+        const lbl = e.mode==='league' ? `${g.date ? g.date.slice(5).replace('-','/')+' ' : ''}第${g.round}半荘` : `${g.round}回戦`;
+        rows.push(`<tr><td class="name">${esc(e.name)} ${lbl}</td><td>${res.ranks[i]}着</td>
           <td class="${res.pts[i]>=0?'plus':'minus'}">${fmtP(res.pts[i])}</td></tr>`);
       });
     });
@@ -837,8 +957,8 @@ function bind(){
       if(seg.id==='f_mode') document.getElementById('tourOpts').style.display = b.dataset.m==='tournament'?'':'none';
       if(seg.id==='g_type'){ const e=ev(); const g=e.games.find(g=>g.round===view.round);
         // 切替時に入力タイプだけ変えて再描画
-        const tmp = g ? {...g, inputType:b.dataset.m} : null;
-        if(tmp) upsertGame(e,tmp); else e.games.push({round:view.round, order:e.playerIds.slice(), inputType:b.dataset.m, raw:['','','',''], pts:['','','',''], kyotaku:0});
+        if(g) upsertGame(e, {...g, inputType:b.dataset.m});
+        else { const ng = defaultGame(e, view.round); ng.inputType = b.dataset.m; e.games.push(ng); }
         render();
       }
     });
@@ -846,7 +966,13 @@ function bind(){
   [0,1,2,3].forEach(i=>{
     const s = document.getElementById('f_p'+i);
     if(s) s.onchange = ()=>{ if(s.value==='__new__') quickAddPlayer(s); else refreshSelf(); };
+    const gs = document.getElementById('g_p'+i);
+    if(gs && gs.querySelector('option[value="__new__"]')) gs.onchange = ()=>{ if(gs.value==='__new__') quickAddPlayer(gs); };
   });
+  const ls = document.getElementById('f_lself');
+  if(ls) ls.onchange = ()=>{ if(ls.value==='__new__') quickAddPlayer(ls); };
+  const lp = document.getElementById('lg_plot');
+  if(lp) lp.onchange = ()=>{ view.plotId = lp.value; render(); };
   if(document.getElementById('f_self')) refreshSelf();
   const cme = document.getElementById('c_me');
   if(cme) cme.onchange = ()=>{ view.meId = cme.value; render(); };
@@ -859,7 +985,7 @@ function act(d, el){
   if(A==='newEvent') go({name:'newEvent'});
   else if(A==='createEvent') createEvent();
   else if(A==='openEvent'){ const e = S.events.find(x=>x.id===d.id);
-    go(e.mode==='tournament' ? {name:'event', evId:e.id} : {name:'border', evId:e.id}); }
+    go({name:evView(e), evId:e.id}); }
   else if(A==='openGame') go({name:'game', evId:view.evId, round:Number(d.r)});
   else if(A==='sign'){
     const inp = document.getElementById('g_v'+d.i);
@@ -867,6 +993,14 @@ function act(d, el){
     inp.focus();
   }
   else if(A==='saveGame') saveGame();
+  else if(A==='delGame'){
+    if(confirm('この半荘を削除しますか?')){
+      const e = ev();
+      e.games = e.games.filter(g=>g.round!==view.round);
+      e.games.sort((a,b)=>a.round-b.round).forEach((g,i)=>g.round=i+1);
+      save(); back();
+    }
+  }
   else if(A==='cond') go({name:'cond', evId:view.evId});
   else if(A==='final') go({name:'final', evId:view.evId});
   else if(A==='fhsign'){
@@ -895,7 +1029,7 @@ function act(d, el){
     save(); back();
   }
   else if(A==='delPlayer'){
-    const used = S.events.some(e=> (e.playerIds||[]).includes(view.pid));
+    const used = S.events.some(e=> (e.playerIds||[]).includes(view.pid) || (e.games||[]).some(g=>g.order.includes(view.pid)));
     if(used){ alert('大会記録があるプレイヤーは削除できません'); return; }
     if(confirm('削除しますか?')){ S.players = S.players.filter(p=>p.id!==view.pid); save(); back(); }
   }
