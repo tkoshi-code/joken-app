@@ -155,10 +155,10 @@ function totals(ev){
 function gamePts(ev, g){
   const pr = preset(ev.presetId);
   if(g.inputType === 'raw'){
-    if(g.raw.some(v=>v===null||v===undefined||v==='')) return null;
+    if(!g.raw || g.raw.some(v=>v===null||v===undefined||v==='')) return null;
     return calcGame(pr, g.raw.map(Number), Number(g.kyotaku)||0);
   }else{
-    if(g.pts.some(v=>v===null||v===undefined||v==='')) return null;
+    if(!g.pts || g.pts.some(v=>v===null||v===undefined||v==='')) return null;
     const pts = g.pts.map(v=>Math.round(Number(v)*10));
     const idx=[0,1,2,3].sort((a,b)=>pts[b]-pts[a]||a-b);
     const ranks=[0,0,0,0]; idx.forEach((p,r)=>ranks[p]=r+1);
@@ -277,8 +277,8 @@ function playerOptions(selId){
 function quickAddPlayer(selEl){
   const name = prompt('プレイヤー名を入力');
   if(!name){ selEl.value=''; return; }
-  const org = prompt(`所属を入力(番号):\n${ORGS.map((o,i)=>`${i+1}:${o}`).join(' ')}`, '8');
-  const o = ORGS[(parseInt(org)||8)-1] || '一般';
+  const org = prompt(`所属を入力(番号):\n${ORGS.map((o,i)=>`${i+1}:${o}`).join(' ')}`, '1');
+  const o = ORGS[(parseInt(org)||1)-1] || '最高位戦';
   const p = {id:uid(), name:name.trim(), kana:'', org:o, memo:''};
   S.players.push(p); save();
   document.querySelectorAll('select').forEach(s=>{
@@ -379,8 +379,10 @@ function vGame(){
     const opts = e.playerIds.map(pid=>`<option value="${pid}" ${pid===g.order[i]?'selected':''}>${esc(pname(pid))}</option>`).join('');
     return `<div class="row" style="margin-top:6px">
       <select id="g_p${i}" style="flex:1.3">${opts}</select>
-      <input type="number" id="g_v${i}" inputmode="numeric" placeholder="${t==='raw'?'素点':'±ポイント'}"
-        step="${t==='raw'?100:0.1}" value="${t==='raw' ? (g.raw[i]??'') : (g.pts[i]??'')}">
+      <input type="number" id="g_v${i}" inputmode="${t==='raw'?'numeric':'decimal'}" placeholder="${t==='raw'?'素点':'±ポイント'}"
+        step="${t==='raw'?100:0.1}" value="${t==='raw' ? (g.raw?.[i]??'') : (g.pts?.[i]??'')}">
+      <button class="small secondary" data-act="sign" data-i="${i}"
+        style="flex:0 0 46px;width:auto;margin:0;padding:6px 0">±</button>
     </div>`;
   }).join('');
   return `<div class="card">
@@ -556,7 +558,7 @@ function playerStats(){
   return st;
 }
 function vPlayerEdit(){
-  const p = player(view.pid) || {id:null, name:'', kana:'', org:'一般', memo:''};
+  const p = player(view.pid) || {id:null, name:'', kana:'', org:'最高位戦', memo:''};
   const orgOpts = ORGS.map(o=>`<option ${o===p.org?'selected':''}>${o}</option>`).join('');
   // 対戦履歴
   let histHtml = '';
@@ -663,6 +665,11 @@ function act(d, el){
   else if(A==='openEvent'){ const e = S.events.find(x=>x.id===d.id);
     go(e.mode==='tournament' ? {name:'event', evId:e.id} : {name:'border', evId:e.id}); }
   else if(A==='openGame') go({name:'game', evId:view.evId, round:Number(d.r)});
+  else if(A==='sign'){
+    const inp = document.getElementById('g_v'+d.i);
+    if(inp.value !== '' && !isNaN(Number(inp.value))) inp.value = String(-Number(inp.value));
+    inp.focus();
+  }
   else if(A==='saveGame') saveGame();
   else if(A==='cond') go({name:'cond', evId:view.evId});
   else if(A==='copyMode'){
