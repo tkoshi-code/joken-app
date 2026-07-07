@@ -363,11 +363,13 @@ function render(){
   document.querySelectorAll('nav button').forEach(b=> b.classList.toggle('on', b.dataset.v===view.name));
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
-             presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable, help:vHelp}[view.name];
+             presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable, help:vHelp,
+             secEntry:vSecEntry}[view.name];
   m.innerHTML = V();
   const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
-             playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方'}[view.name]
+             playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方',
+             secEntry:'節の手入力'}[view.name]
              || (['event','league','table'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
   bind();
@@ -846,6 +848,8 @@ function parseLeagueRows(text){
     let pts;
     if(nums.length>=3 && close(nums[0], nums.slice(2).reduce((a,b)=>a+b,0))) pts = nums.slice(2);      // Total+対局数+節…(HP形式)
     else if(nums.length>=2 && close(nums[0], nums.slice(1).reduce((a,b)=>a+b,0))) pts = nums.slice(1); // Total+節…
+    else if(nums.length>=6 && close(nums[0], nums[nums.length-1]+nums[nums.length-2]))
+      pts = [nums[nums.length-2]];                                                                      // X画像形式(ポイント=開始時点+節TOTAL)→節TOTALのみ
     else pts = nums;                                                                                    // 節のみ(手入力)
     rows.push({name:nameToks.join(' '), pts});
   });
@@ -892,8 +896,12 @@ function vTable(){
       <button data-m="append">節を追加</button>
     </div>
     <textarea id="t_import" rows="4" style="width:100%;box-sizing:border-box;font-size:14px;margin-top:6px"
-      placeholder="公式HPの成績表をコピーして貼り付け(順位・名前・Total・節ポイントの行)。&#10;手入力は「名前 12.3 ▲5.0」の形式でもOK(▲=マイナス)"></textarea>
+      placeholder="公式HPの成績表をコピーして貼り付け(順位・名前・Total・節ポイントの行)。&#10;Xの結果画像は「テキスト認識でコピー」した行でもOK(自動判別)。&#10;手入力は「名前 12.3 ▲5.0」の形式(▲=マイナス)"></textarea>
     <button class="primary" data-act="importTable">取り込む</button>
+    <div class="row" style="margin-top:6px">
+      <button class="small secondary" data-act="secEntry" style="margin:0">✏️ 節を手入力(名前一覧に入力)</button>
+      <button class="small danger" data-act="delLastSec" style="margin:0">最新節を削除</button>
+    </div>
   </div>`;
   // --- 順位表 ---
   const trs = rows.map((r,ri)=>{
@@ -1068,6 +1076,24 @@ function vPresetEdit(){
   </div>`;
 }
 
+/* ================= 節の手入力(順位表) ================= */
+function vSecEntry(){
+  const e = ev();
+  const nSec = e.rows.reduce((m,r)=>Math.max(m,r.pts.length),0);
+  const total = r => r.pts.reduce((a,b)=>a+(b||0),0);
+  const rows = e.rows.slice().sort((a,b)=>total(b)-total(a));
+  if(!rows.length) return '<div class="card"><div class="warn">先にHP貼り付け等で選手を取り込んでください</div></div>';
+  return `<div class="card"><h2>第${nSec+1}節の結果を手入力</h2>
+    <div class="cond-note">Xの結果画像などを見ながら各選手の節ポイントを入力。空欄は0(不参加など)として記録。マイナスは「±」ボタンで。</div>
+    ${rows.map((r,i)=>`<div class="row" style="margin-top:6px;align-items:center">
+      <div style="flex:1.4;font-size:14px">${esc(r.name)}</div>
+      <input type="number" class="sev" id="se_v${i}" inputmode="decimal" step="0.1" data-name="${esc(r.name)}" placeholder="節P">
+      <button class="small secondary" data-act="sesign" data-i="${i}" style="flex:0 0 40px;width:auto;margin:0;padding:6px 0">±</button>
+    </div>`).join('')}
+    <button class="primary" data-act="saveSec">この節を保存</button>
+  </div>`;
+}
+
 /* ================= 使い方ガイド ================= */
 function vHelp(){
   return `
@@ -1099,7 +1125,11 @@ function vHelp(){
     <div class="s">
     ① 作成時に「自分の名前」を<b>公式HPの表記と同じ</b>に設定(姓名間のスペースは無視されます)<br><br>
     ② 公式HPのリーグ成績表を範囲選択してコピー →「結果の取り込み」欄に貼り付け →「取り込む」。▲のマイナスや順位・地域・対局数の列は自動で処理されます<br><br>
-    ③ 新しい節が出たらHPからもう一度全体をコピーして<b>「全節を上書き」</b>で取り込み直すのが確実です。Xの速報などから節単位で手入力する場合は「名前 12.3 ▲5.0」の形式で<b>「節を追加」</b><br><br>
+    ③ 新しい節が出たらHPからもう一度全体をコピーして<b>「全節を上書き」</b>で取り込み直すのが確実です<br><br>
+    ③' <b>当日のXの結果は画像で届きます</b>。2通りの取り込み方があります:<br>
+    ・画像の文字をスマホの<b>テキスト認識でコピー</b>(iPhone: 写真を長押しして文字選択 / Android: Googleレンズ)→「節を追加」で貼り付け。X形式の行(ポイント・各回戦・節TOTAL・開始時点)は自動判別して節TOTALだけを取り込みます<br>
+    ・または<b>「✏️ 節を手入力」</b>: 取り込み済みの名前一覧が並ぶので、画像を見ながら節ポイントの数字だけ入力(空欄=0)。間違えたら「最新節を削除」でやり直し<br>
+    いずれも速報用なので、後日HPが更新されたら「全節を上書き」で正確な値に置き換えるのがおすすめです<br><br>
     ④ 設定の3ライン(2段階昇級/昇級/残留の順位)を入れると、自分との差・圏内の色分け・グラフの破線が出ます<br><br>
     ⑤ 推移グラフの比較相手は最大4人。「プレイヤー帳に追加」ボタンで、選んだ相手を対局相手として登録できます
     </div>
@@ -1233,6 +1263,32 @@ function act(d, el){
   }
   else if(A==='delRow'){ const e=ev(); e.rows = e.rows.filter(r=>r.name!==d.n); save(); render(); }
   else if(A==='help') go({name:'help'});
+  else if(A==='secEntry') go({name:'secEntry', evId:view.evId});
+  else if(A==='sesign'){
+    const inp = document.getElementById('se_v'+d.i);
+    if(inp.value !== '' && !isNaN(Number(inp.value))) inp.value = String(-Number(inp.value));
+    inp.focus();
+  }
+  else if(A==='saveSec'){
+    const e = ev();
+    const nSec = e.rows.reduce((m,r)=>Math.max(m,r.pts.length),0);
+    document.querySelectorAll('.sev').forEach(inp=>{
+      const row = e.rows.find(r=>r.name===inp.dataset.name);
+      if(!row) return;
+      while(row.pts.length < nSec) row.pts.push(0);
+      row.pts[nSec] = Number(inp.value)||0;
+    });
+    save(); back();
+  }
+  else if(A==='delLastSec'){
+    const e = ev();
+    const nSec = e.rows.reduce((m,r)=>Math.max(m,r.pts.length),0);
+    if(!nSec){ alert('削除できる節がありません'); return; }
+    if(confirm(`第${nSec}節のデータを削除しますか?`)){
+      e.rows.forEach(r=>{ if(r.pts.length===nSec) r.pts.pop(); });
+      save(); render();
+    }
+  }
   else if(A==='addRivals'){
     const names = (view.rivals||[]).filter(Boolean);
     if(!names.length){ alert('比較相手が選択されていません'); return; }
