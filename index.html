@@ -938,13 +938,21 @@ function vTable(){
   if(promote2>0) lineAt(promote2-1, `2段階昇級(${promote2}位)`, '#6a1b9a');
   if(promote>0)  lineAt(promote-1,  `昇級(${promote}位)`, '#c62828');
   if(stay>0)     lineAt(stay-1, `残留ライン(${stay}位)`, '#455a64');
-  const rival = rows.find(r=>r.name===view.rival);
-  if(rival && !isSelf(rival)) series.push({name:rival.name, color:'#1565c0', values:cumOf(rival)});
-  const rivalOpts = `<option value="">なし</option>` +
-    rows.filter(r=>!isSelf(r)).map(r=>`<option value="${esc(r.name)}" ${r.name===view.rival?'selected':''}>${esc(r.name)}</option>`).join('');
+  const RIVAL_COLORS = ['#1565c0','#ef6c00','#00838f','#ad1457'];
+  view.rivals = view.rivals || [];
+  view.rivals.forEach((nm,k)=>{
+    const r = rows.find(x=>x.name===nm);
+    if(r && !isSelf(r)) series.push({name:r.name, color:RIVAL_COLORS[k%4], values:cumOf(r)});
+  });
+  const nameOpts = cur => rows.filter(r=>!isSelf(r))
+    .map(r=>`<option value="${esc(r.name)}" ${r.name===cur?'selected':''}>${esc(r.name)}</option>`).join('');
+  const rivalSels = [0,1,2,3].map(k=>
+    `<select class="trival" data-k="${k}" style="flex:1 1 45%;min-width:45%">
+      <option value="">— 比較相手${k+1} —</option>${nameOpts(view.rivals[k]||'')}</select>`).join('');
   const chartCard = `<div class="card"><h2>推移グラフ</h2>
     ${series.length && nSec>0 ? lineChart(series,'節') : '<div class="cond-note">結果を取り込むとグラフが表示されます(自分の名前を設定してください)</div>'}
-    <div class="no-copy"><label>比較相手を追加</label><select id="t_rival">${rivalOpts}</select></div>
+    <div class="no-copy"><label>比較相手(最大4人)</label>
+      <div class="row" style="flex-wrap:wrap;gap:6px">${rivalSels}</div></div>
   </div>`;
   return setCard + tableCard + chartCard + `
     <button class="secondary danger no-copy" data-act="clearRows">順位表を全て消去</button>
@@ -1136,8 +1144,11 @@ function bind(){
     e.stay     = Number(document.getElementById('t_stay').value) || null;
     save(); render();
   });
-  const rv = document.getElementById('t_rival');
-  if(rv) rv.onchange = ()=>{ view.rival = rv.value; render(); };
+  document.querySelectorAll('.trival').forEach(el=> el.onchange = ()=>{
+    view.rivals = view.rivals || [];
+    view.rivals[Number(el.dataset.k)] = el.value;
+    render();
+  });
   if(document.getElementById('f_self')) refreshSelf();
   const cme = document.getElementById('c_me');
   if(cme) cme.onchange = ()=>{ view.meId = cme.value; render(); };
