@@ -85,9 +85,9 @@
 const LSKEY = 'jokenapp_v1';
 const ORGS = ['最高位戦','連盟','協会','RMU','連合','101','その他','一般'];
 const BUILTIN = [
-  {id:'saikouisen', name:'最高位戦', start:30000, kaeshi:30000, uma:[30,10,-10,-30], oka:0,  tieRank:'split', kyotakuToTop:false, builtin:true},
-  {id:'classic',    name:'最高位戦Classic', start:30000, kaeshi:30000, uma:[12,4,-4,-12],  oka:0,  tieRank:'split', kyotakuToTop:false, builtin:true},
-  {id:'mleague',    name:'Mリーグ', start:25000, kaeshi:30000, uma:[30,10,-10,-30], oka:20, tieRank:'seat',  kyotakuToTop:true,  builtin:true},
+  {id:'saikouisen', name:'最高位戦', start:30000, kaeshi:30000, uma:[30,10,-10,-30], oka:0,  tieRank:'split', kyotakuToTop:false, noten:true,  kiriage:false, builtin:true},
+  {id:'classic',    name:'最高位戦Classic', start:30000, kaeshi:30000, uma:[12,4,-4,-12],  oka:0,  tieRank:'split', kyotakuToTop:false, noten:false, kiriage:false, builtin:true},
+  {id:'mleague',    name:'Mリーグ', start:25000, kaeshi:30000, uma:[30,10,-10,-30], oka:20, tieRank:'seat',  kyotakuToTop:true,  noten:true,  kiriage:true,  builtin:true},
 ];
 let S = load();
 function load(){
@@ -195,6 +195,157 @@ function condMatrix(pr, Tme, Top, tieOK){
   return {cells, tieSame};
 }
 
+/* ===== オーラス判定: 実在する点数の一覧(点数表) ===== */
+const KO_RON_L  = [1000,1300,1600,2000,2300,2600,2900,3200,3600,3900,4500,5200,5800,6400,7100,7700,8000,12000,16000,24000,32000,64000];
+const OYA_RON_L = [1500,2000,2400,2900,3400,3900,4400,4800,5300,5800,6800,7700,8700,9600,10600,11600,12000,18000,24000,36000,48000,96000];
+const KO_TSUMO_L = [[300,500],[400,700],[400,800],[500,1000],[600,1200],[700,1300],[800,1500],[800,1600],
+  [1000,2000],[1200,2300],[1300,2600],[1500,2900],[1600,3200],[2000,3900],[2000,4000],[3000,6000],
+  [4000,8000],[6000,12000],[8000,16000],[16000,32000]];
+const OYA_TSUMO_L = [500,700,800,1000,1200,1300,1500,1600,2000,2300,2600,2900,3200,3900,4000,6000,8000,12000,16000,32000];
+function scoreTables(pr){ // 切り上げ満貫ルールでは 7700/11600/2000-3900/3900オール が存在しない
+  const kir = !!pr.kiriage;
+  return {
+    koRon:  KO_RON_L.filter(v=>!(kir && v===7700)),
+    oyaRon: OYA_RON_L.filter(v=>!(kir && v===11600)),
+    koTsu:  KO_TSUMO_L.filter(p=>!(kir && p[0]===2000 && p[1]===3900)),
+    oyaTsu: OYA_TSUMO_L.filter(v=>!(kir && v===3900)),
+  };
+}
+function ronLbl(v, oya){
+  const L = oya ? {12000:'満貫',18000:'跳満',24000:'倍満',36000:'三倍満',48000:'役満',96000:'W役満'}
+                : {8000:'満貫',12000:'跳満',16000:'倍満',24000:'三倍満',32000:'役満',64000:'W役満'};
+  return fmtPt(v) + (L[v] ? `(${L[v]})` : '');
+}
+function tsuLbl(s, oya){
+  if(oya){
+    const L = {4000:'満貫',6000:'跳満',8000:'倍満',12000:'三倍満',16000:'役満',32000:'W役満'};
+    return fmtPt(s) + 'オール' + (L[s] ? `(${L[s]})` : '');
+  }
+  const L = {8000:'満貫',12000:'跳満',16000:'倍満',24000:'三倍満',32000:'役満',64000:'W役満'};
+  const tot = 2*s[0] + s[1];
+  return `${fmtPt(s[0])}-${fmtPt(s[1])}` + (L[tot] ? `(${L[tot]})` : '');
+}
+
+/* オーラス判定の本体: 全アウトカムをシミュレーションして通過可否を判定 */
+function finalResults(e){
+  const pr = preset(e.presetId), f = e.finalHand;
+  if(new Set(f.order).size !== 4) return '<div class="card"><div class="warn err">プレイヤーが重複しています</div></div>';
+  const meIdx = f.order.indexOf(e.selfId);
+  if(meIdx < 0) return `<div class="card"><div class="warn err">「自分」(${esc(pname(e.selfId))})が席にいません</div></div>`;
+  if(f.raws.some(v=>v===''||v===null||isNaN(Number(v))))
+    return '<div class="card"><div class="warn">4人の現在素点を入力すると条件を表示します</div></div>';
+  const raws = f.raws.map(Number), kyo = Number(f.kyotaku)||0, honba = Number(f.honba)||0, dealer = Number(f.dealer);
+  const target = Math.min(Number(f.target)||e.passCount, e.passCount);
+  // 前回戦までの累計(最終回戦の入力は含めない)
+  const preT = {}; e.playerIds.forEach(id=>preT[id]=0);
+  e.games.filter(g=>g.round<e.rounds).forEach(g=>{ const r=gamePts(e,g); if(r) g.order.forEach((pid,i)=>preT[pid]+=r.pts[i]); });
+  const sum = raws.reduce((a,b)=>a+b,0);
+  const warn = (sum+kyo !== pr.start*4)
+    ? `<div class="warn">⚠️ 検算: 素点合計${fmtPt(sum)}+供託${fmtPt(kyo)}=${fmtPt(sum+kyo)} ≠ ${fmtPt(pr.start*4)}点。入力を確認してください。</div>` : '';
+  // 通過判定: アウトカム適用後の素点で半荘を精算→累計→着順(トータル同点は先着/追いつき設定)
+  const passes = (fr, leftKyo) => {
+    const res = calcGame(pr, fr, leftKyo);
+    const tot = {}; f.order.forEach((pid,i)=> tot[pid] = preT[pid] + res.pts[i]);
+    const my = tot[e.selfId]; let above = 0;
+    f.order.forEach(pid=>{
+      if(pid === e.selfId) return;
+      const tieOK = e.tiePolicy==='senchaku' ? preT[e.selfId] > preT[pid] : preT[e.selfId] < preT[pid];
+      if(tot[pid] > my || (tot[pid] === my && !tieOK)) above++;
+    });
+    return above + 1 <= target;
+  };
+  const T = scoreTables(pr);
+  const honRon = 300*honba, honTsu = 100*honba;
+  const apply = d => raws.map((x,i)=>x+d[i]);
+  const tsumoDelta = (w, s) => {
+    const d = [0,0,0,0];
+    if(w === dealer){ for(let i=0;i<4;i++) if(i!==w) d[i] = -(s+honTsu); d[w] = 3*s + 3*honTsu + kyo; }
+    else { for(let i=0;i<4;i++) if(i!==w) d[i] = -((i===dealer?s[1]:s[0])+honTsu); d[w] = 2*s[0]+s[1] + 3*honTsu + kyo; }
+    return d;
+  };
+  const ronDelta = (w, v, s) => { const d=[0,0,0,0]; d[v] = -(s+honRon); d[w] = s+honRon+kyo; return d; };
+
+  // --- 自分のアガリ条件 ---
+  const myTsuL = meIdx===dealer ? T.oyaTsu : T.koTsu;
+  let minTsu = null;
+  for(const s of myTsuL){ if(passes(apply(tsumoDelta(meIdx, s)), 0)){ minTsu = s; break; } }
+  const myRonL = meIdx===dealer ? T.oyaRon : T.koRon;
+  const oppIdx = [0,1,2,3].filter(i=>i!==meIdx);
+  const myRon = oppIdx.map(v=>{
+    let m = null;
+    for(const s of myRonL){ if(passes(apply(ronDelta(meIdx, v, s)), 0)){ m = s; break; } }
+    return {v, m};
+  });
+  const noWinPass = passes(raws.slice(), kyo); // このまま流局(罰符なし)なら
+  const tgtSeg = `<div class="seg no-copy" style="margin-bottom:10px">${
+    Array.from({length:e.passCount},(_,k)=>k+1).map(r=>
+      `<button data-act="fhtarget" data-t="${r}" class="${r===target?'on':''}">${r}位通過</button>`).join('')}</div>`;
+  const agariCard = `<div class="card"><h2>アガリ条件(${esc(pname(e.selfId))}・${target}位通過)</h2>
+    ${warn}${tgtSeg}
+    <table>
+      <tr><th style="width:40%">ツモ</th><td>${minTsu!==null ? '<b>'+tsuLbl(minTsu, meIdx===dealer)+'</b> 以上' : '<span class="minus">×(役満ツモでも届かず)</span>'}</td></tr>
+      ${myRon.map(r=>`<tr><th>${esc(pname(f.order[r.v]))} からロン</th>
+        <td>${r.m!==null ? '<b>'+ronLbl(r.m, meIdx===dealer)+'</b> 以上' : '<span class="minus">×(届かず)</span>'}</td></tr>`).join('')}
+    </table>
+    ${noWinPass ? '<div class="ok-note">※このまま流局(罰符移動なし)でも通過圏です</div>' : ''}
+    <div class="cond-note">この局で終局する前提。供託${fmtPt(kyo)}点・${honba}本場を含めて計算。</div>
+  </div>`;
+
+  // --- 相手のアガリ許容(◯なら通過維持) ---
+  const prefixMax = (list, mk) => { // 打点が上がるほど不利になる前提で、通過を維持できる最大打点
+    let last = null, all = true;
+    for(const s of list){ if(passes(apply(mk(s)), 0)) last = s; else { all = false; break; } }
+    return {last, all};
+  };
+  const allowRows = oppIdx.map(w=>{
+    const isOya = w===dealer;
+    const tsu = prefixMax(isOya?T.oyaTsu:T.koTsu, s=>tsumoDelta(w,s));
+    const ronMe = prefixMax(isOya?T.oyaRon:T.koRon, s=>ronDelta(w, meIdx, s));
+    const others = oppIdx.filter(v=>v!==w);
+    let yoko = null;
+    for(const v of others){
+      const r = prefixMax(isOya?T.oyaRon:T.koRon, s=>ronDelta(w, v, s));
+      if(yoko===null || (!r.all && (yoko.all || (yoko.last!==null && (r.last===null || (isOya?T.oyaRon:T.koRon).indexOf(r.last) < (isOya?T.oyaRon:T.koRon).indexOf(yoko.last)))))) yoko = r;
+    }
+    const cell = (r, tsumo) => r.all ? '<span class="plus">◯無制限</span>'
+      : r.last===null ? '<span class="minus">×即アウト</span>'
+      : (tsumo ? tsuLbl(r.last, isOya) : ronLbl(r.last, isOya)) + ' まで◯';
+    return `<tr><td class="name">${esc(pname(f.order[w]))}${isOya?'<span class="badge">親</span>':''}</td>
+      <td>${cell(tsu, true)}</td><td>${cell(ronMe, false)}</td><td>${cell(yoko, false)}</td></tr>`;
+  }).join('');
+  const allowCard = `<div class="card"><h2>相手のアガリ許容(${target}位通過を維持できる範囲)</h2>
+    <table><tr><th>アガる人</th><th>ツモられ</th><th>自分が放銃</th><th>横移動</th></tr>${allowRows}</table>
+    <div class="cond-note">「まで◯」=その打点までなら通過維持。横移動は最も不利な放銃者で計算(安全側)。</div>
+  </div>`;
+
+  // --- 流局判定 ---
+  let drawCard;
+  if(pr.noten === false){
+    drawCard = `<div class="card"><h2>流局</h2>
+      <div>${passes(raws.slice(), kyo) ? '<span class="plus">◯ 通過</span>' : '<span class="minus">× 届かず</span>'}(このルールはノーテン罰符なし)</div></div>`;
+  }else{
+    const rows = [];
+    for(let mask=0; mask<8; mask++){
+      const tenOpp = oppIdx.filter((_,k)=> mask & (1<<k));
+      const label = tenOpp.length ? tenOpp.map(i=>esc(pname(f.order[i]))).join('・') : 'なし';
+      const cells = [true, false].map(myTen=>{
+        const ten = new Set(tenOpp); if(myTen) ten.add(meIdx);
+        const t = ten.size;
+        const fr = raws.map((x,i)=>{
+          if(t===0 || t===4) return x;
+          return x + (ten.has(i) ? 3000/t : -3000/(4-t));
+        });
+        return passes(fr, kyo) ? '<span class="plus">◯</span>' : '<span class="minus">×</span>';
+      });
+      rows.push(`<tr><td class="name">${label}</td><td>${cells[0]}</td><td>${cells[1]}</td></tr>`);
+    }
+    drawCard = `<div class="card"><h2>流局(ノーテン罰符 場3,000)</h2>
+      <table><tr><th>相手のテンパイ</th><th>自分テンパイ</th><th>自分ノーテン</th></tr>${rows.join('')}</table>
+    </div>`;
+  }
+  return agariCard + allowCard + drawCard;
+}
+
 /* ================= 画面遷移 ================= */
 let view = {name:'home'};
 const hist = [];
@@ -212,11 +363,11 @@ function render(){
   document.querySelectorAll('nav button').forEach(b=> b.classList.toggle('on', b.dataset.v===view.name));
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
-             presetEdit:vPresetEdit}[view.name];
+             presetEdit:vPresetEdit, final:vFinal}[view.name];
   m.innerHTML = V();
   const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
-             playerEdit:'プレイヤー編集', presetEdit:'カスタムルール'}[view.name]
+             playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定'}[view.name]
              || (view.name==='event' ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
   bind();
@@ -363,7 +514,8 @@ function vEvent(){
       <table><tr><th>順位</th><th>名前</th><th>トータル</th><th>${finished?'差':'ボーダー差'}</th></tr>${rows}</table>
       ${finished ? `<div class="ok-note">全${e.rounds}回戦終了。上位${e.passCount}名が通過です。</div>` : ''}
     </div>
-    ${isFinalNext ? `<button class="primary" data-act="cond">📋 条件表を見る(最終${e.rounds}回戦前)</button>`
+    ${isFinalNext ? `<button class="primary" data-act="cond">📋 条件表を見る(最終${e.rounds}回戦前)</button>
+    <button class="secondary" data-act="final">🎯 オーラス判定(最終局のツモ・ロン条件)</button>`
       : (done>0 && !finished ? `<button class="secondary" data-act="cond">条件表(途中経過: ${done}回戦終了時点)</button>` : '')}
     <div class="card"><h2>スコア入力</h2>${gameRows.join('')}</div>
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
@@ -632,8 +784,52 @@ function vPresetEdit(){
   </div>`;
 }
 
+/* ================= オーラス判定(入力画面) ================= */
+function vFinal(){
+  const e = ev(); const pr = preset(e.presetId);
+  if(!e.finalHand) e.finalHand = {order:e.playerIds.slice(), raws:['','','',''], kyotaku:0, honba:0, dealer:3, target:e.passCount};
+  const f = e.finalHand;
+  const rows = [0,1,2,3].map(i=>{
+    const opts = e.playerIds.map(pid=>`<option value="${pid}" ${pid===f.order[i]?'selected':''}>${esc(pname(pid))}</option>`).join('');
+    return `<div class="row" style="margin-top:6px">
+      <select id="fh_p${i}" class="fhsel" style="flex:1.2">${opts}</select>
+      <input type="number" id="fh_v${i}" class="fhnum" inputmode="numeric" step="100" placeholder="現在素点" value="${f.raws[i]??''}">
+      <button class="small secondary" data-act="fhsign" data-i="${i}" style="flex:0 0 40px;width:auto;margin:0;padding:6px 0">±</button>
+    </div>`;
+  }).join('');
+  const dOpts = [0,1,2,3].map(i=>`<option value="${i}" ${i===Number(f.dealer)?'selected':''}>${esc(pname(f.order[i]))}</option>`).join('');
+  return `<div class="card">
+    <h2>最終局の状況 <span class="badge">${esc(pr.name)}</span></h2>
+    <div class="cond-note">上から起家→南→西→北(開局時の席順)。この局開始時点の持ち点を入力。
+    リーチ者は1,000点引いた持ち点にして、その分を供託に足してください。南4局なら親は通常4番目です。</div>
+    ${rows}
+    <div class="row" style="margin-top:8px">
+      <div style="flex:1"><label>供託(点)</label><input type="number" id="fh_kyo" class="fhnum" inputmode="numeric" step="1000" value="${f.kyotaku||0}"></div>
+      <div style="flex:0.7"><label>本場</label><input type="number" id="fh_honba" class="fhnum" inputmode="numeric" step="1" value="${f.honba||0}"></div>
+      <div style="flex:1.2"><label>親</label><select id="fh_dealer" class="fhsel">${dOpts}</select></div>
+    </div>
+  </div>
+  <div id="fh_out">${finalResults(e)}</div>
+  <button class="primary no-copy" data-act="copyMode">📝 転記モード(手書き用表示)</button>`;
+}
+function readFinal(){
+  const e = ev(); const f = e.finalHand;
+  f.order   = [0,1,2,3].map(i=>document.getElementById('fh_p'+i).value);
+  f.raws    = [0,1,2,3].map(i=>document.getElementById('fh_v'+i).value);
+  f.kyotaku = document.getElementById('fh_kyo').value;
+  f.honba   = document.getElementById('fh_honba').value;
+  f.dealer  = document.getElementById('fh_dealer').value;
+  save();
+}
+function refreshFinalOut(){
+  document.getElementById('fh_out').innerHTML = finalResults(ev());
+  bind();
+}
+
 /* ================= イベントバインド ================= */
 function bind(){
+  document.querySelectorAll('.fhnum').forEach(el=> el.onchange = ()=>{ readFinal(); refreshFinalOut(); });
+  document.querySelectorAll('.fhsel').forEach(el=> el.onchange = ()=>{ readFinal(); render(); });
   document.querySelectorAll('.seg').forEach(seg=>{
     seg.querySelectorAll('button').forEach(b=> b.onclick = ()=>{
       seg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
@@ -672,6 +868,13 @@ function act(d, el){
   }
   else if(A==='saveGame') saveGame();
   else if(A==='cond') go({name:'cond', evId:view.evId});
+  else if(A==='final') go({name:'final', evId:view.evId});
+  else if(A==='fhsign'){
+    const inp = document.getElementById('fh_v'+d.i);
+    if(inp.value !== '' && !isNaN(Number(inp.value))) inp.value = String(-Number(inp.value));
+    readFinal(); refreshFinalOut();
+  }
+  else if(A==='fhtarget'){ ev().finalHand.target = Number(d.t); save(); refreshFinalOut(); }
   else if(A==='copyMode'){
     document.body.classList.add('copy-mode');
     const off = ()=>{ document.body.classList.remove('copy-mode'); document.body.removeEventListener('click', off, true); };
