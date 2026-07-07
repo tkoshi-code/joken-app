@@ -363,12 +363,12 @@ function render(){
   document.querySelectorAll('nav button').forEach(b=> b.classList.toggle('on', b.dataset.v===view.name));
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
-             presetEdit:vPresetEdit, final:vFinal, league:vLeague}[view.name];
+             presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable}[view.name];
   m.innerHTML = V();
   const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定'}[view.name]
-             || (['event','league'].includes(view.name) ? esc(ev().name) : '');
+             || (['event','league','table'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
   bind();
 }
@@ -382,6 +382,8 @@ function vHome(){
       ? `${e.date}・${pr.name}・${e.rounds}回戦 ${e.passCount}位抜け`
       : e.mode==='league'
       ? `${e.date}・${pr.name}・記録 ${e.games.length}半荘`
+      : e.mode==='table'
+      ? `${e.date}・順位表 ${(e.rows||[]).length}名`
       : `${e.date}・${pr.name}・ボーダー比較`;
     return `<div class="listitem" data-act="openEvent" data-id="${e.id}">
       <div class="grow"><div class="t">${esc(e.name)}</div><div class="s">${sub}</div></div><div>›</div></div>`;
@@ -403,13 +405,19 @@ function vNewEvent(){
     <label>モード</label>
     <div class="seg" id="f_mode">
       <button data-m="tournament" class="on">トーナメント</button>
-      <button data-m="league">リーグ戦(記録)</button>
-      <button data-m="border">ボーダー比較</button>
+      <button data-m="league">対局記録</button>
+      <button data-m="table">順位表</button>
+      <button data-m="border">ボーダー</button>
     </div>
     <div id="leagueOpts" style="display:none">
       <label>自分</label><select id="f_lself">${plOpts(S.selfId)}</select>
       <div class="cond-note">リーグ戦・研究会などの成績記録用。半荘を追加していくと累計と推移グラフが見られます。
       同卓メンバーは大会作成後、半荘ごとに選択します(その場で新規登録も可)。</div>
+    </div>
+    <div id="tableOpts" style="display:none">
+      <label>自分の名前(公式HPの表記と同じに)</label><input type="text" id="f_tself" value="${esc(player(S.selfId)?.name||'')}">
+      <label>昇級ライン(上位何名か・未定なら空欄)</label><input type="number" id="f_tpromote" inputmode="numeric" placeholder="例: 20">
+      <div class="cond-note">公式HPのリーグ成績表を貼り付けて、全体順位表・昇級ボーダーとの差・節ごとの推移グラフを見るモード。プレイヤー帳への登録は不要です。</div>
     </div>
     <div id="borderOpts" style="display:none">
       <div class="cond-note">ワンデー・リーグ戦の通過ライン比較用。自分のトータルポイントとボーダー想定値を手入力するモードのため、メンバー登録は不要です。</div>
@@ -481,6 +489,10 @@ function createEvent(){
     const self = document.getElementById('f_lself').value;
     if(!self || self==='__new__'){ alert('「自分」を選択してください'); return; }
     e.selfId = self; e.games = [];
+  }else if(mode === 'table'){
+    e.selfName = document.getElementById('f_tself').value.trim();
+    e.promote = Number(document.getElementById('f_tpromote').value) || null;
+    e.rows = [];
   }else{
     e.myTotal = 0; e.borders = [];
   }
@@ -488,7 +500,7 @@ function createEvent(){
   hist.length = 0;
   go({name:evView(e), evId:e.id});
 }
-function evView(e){ return e.mode==='tournament' ? 'event' : e.mode==='league' ? 'league' : 'border'; }
+function evView(e){ return {tournament:'event', league:'league', table:'table'}[e.mode] || 'border'; }
 
 /* ================= 大会画面(トーナメント) ================= */
 function vEvent(){
@@ -773,7 +785,7 @@ function vLeague(){
     <button class="primary" data-act="openGame" data-r="${nextRound}">＋ 半荘を追加</button>
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
 }
-function lineChart(series){
+function lineChart(series, xLabel='半荘数'){
   const W=680, H=320, L=52, R=14, T=14, B=30;
   const n = Math.max(...series.map(s=>s.values.length));
   let mn=0, mx=0;
@@ -797,12 +809,120 @@ function lineChart(series){
   const lines=series.map(s=>{
     const pts=s.values.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
     const dots=(n<=40) ? s.values.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" fill="${s.color}"/>`).join('') : '';
-    return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.self?3:1.8}"/>${dots}`;
+    return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.self?3:1.8}"${s.dash?' stroke-dasharray="7 5"':''}/>${dots}`;
   }).join('');
   const legend=series.length>1 ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${series.map(s=>
     `<span style="font-size:12px"><span style="display:inline-block;width:14px;height:3px;background:${s.color};vertical-align:middle;margin-right:3px"></span>${esc(s.name)}</span>`).join('')}</div>` : '';
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${grid}${xax}${lines}</svg>${legend}
-    <div class="cond-note">縦軸: ポイント / 横軸: 半荘数</div>`;
+    <div class="cond-note">縦軸: ポイント / 横軸: ${xLabel}</div>`;
+}
+
+/* ================= リーグ順位表モード ================= */
+function parseLeagueRows(text){
+  const rows = [];
+  text.split(/\r?\n/).forEach(line=>{
+    let t = line.trim(); if(!t) return;
+    t = t.replace(/[▲△]/g,'-').replace(/[，,]/g,'')
+         .replace(/[０-９]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0))
+         .replace(/．/g,'.').replace(/[－ー−]/g,'-');
+    const toks = t.split(/[\s\t]+/).filter(Boolean);
+    if(!toks.length) return;
+    let i = 0;
+    // 先頭が順位番号(直後が名前)ならスキップ
+    if(/^\d+\.?$/.test(toks[0]) && toks.length>2 && !/^-?\d/.test(toks[1])) i = 1;
+    const nameToks = [];
+    while(i<toks.length && !/^-?\d+(\.\d+)?$/.test(toks[i])){ nameToks.push(toks[i]); i++; }
+    if(!nameToks.length) return;
+    const nums = [];
+    for(; i<toks.length; i++){ if(/^-?\d+(\.\d+)?$/.test(toks[i])) nums.push(parseFloat(toks[i])); }
+    if(!nums.length) return;
+    const close = (a,b)=>Math.abs(a-b)<0.051;
+    let pts;
+    if(nums.length>=3 && close(nums[0], nums.slice(2).reduce((a,b)=>a+b,0))) pts = nums.slice(2);      // Total+対局数+節…(HP形式)
+    else if(nums.length>=2 && close(nums[0], nums.slice(1).reduce((a,b)=>a+b,0))) pts = nums.slice(1); // Total+節…
+    else pts = nums;                                                                                    // 節のみ(手入力)
+    rows.push({name:nameToks.join(' '), pts});
+  });
+  return rows;
+}
+function importRows(e, parsed, mode){
+  parsed.forEach(r=>{
+    const key = r.name.replace(/\s+/g,'');
+    let row = e.rows.find(x=>x.name.replace(/\s+/g,'')===key);
+    if(!row){ row = {name:r.name, pts:[]}; e.rows.push(row); }
+    if(mode==='append') row.pts = row.pts.concat(r.pts);
+    else row.pts = r.pts;
+  });
+}
+function vTable(){
+  const e = ev();
+  e.rows = e.rows || [];
+  const nSec = e.rows.reduce((m,r)=>Math.max(m,r.pts.length),0);
+  const total = r => r.pts.reduce((a,b)=>a+(b||0),0);
+  const rows = e.rows.slice().sort((a,b)=>total(b)-total(a));
+  const selfKey = (e.selfName||'').replace(/\s+/g,'');
+  const isSelf = r => selfKey && r.name.replace(/\s+/g,'')===selfKey;
+  const selfRow = rows.find(isSelf);
+  const promote = Number(e.promote)||0;
+  const borderTotal = (promote>0 && rows.length>=promote) ? total(rows[promote-1]) : null;
+  // --- 設定+取り込み ---
+  const setCard = `<div class="card"><h2>設定</h2>
+    <div class="row">
+      <div style="flex:1.4"><label>自分の名前</label><input type="text" id="t_self" class="tset" value="${esc(e.selfName||'')}"></div>
+      <div><label>昇級ライン(位)</label><input type="number" id="t_promote" class="tset" inputmode="numeric" value="${e.promote||''}"></div>
+    </div>
+  </div>
+  <div class="card no-copy"><h2>結果の取り込み</h2>
+    <div class="seg" id="t_imode">
+      <button data-m="replace" class="on">全節を上書き(HP貼り付け)</button>
+      <button data-m="append">節を追加</button>
+    </div>
+    <textarea id="t_import" rows="4" style="width:100%;box-sizing:border-box;font-size:14px;margin-top:6px"
+      placeholder="公式HPの成績表をコピーして貼り付け(順位・名前・Total・節ポイントの行)。&#10;手入力は「名前 12.3 ▲5.0」の形式でもOK(▲=マイナス)"></textarea>
+    <button class="primary" data-act="importTable">取り込む</button>
+  </div>`;
+  // --- 順位表 ---
+  const trs = rows.map((r,ri)=>{
+    const diff = borderTotal!==null ? total(r)-borderTotal : (selfRow && !isSelf(r) ? total(r)-total(selfRow) : null);
+    return `<tr ${isSelf(r)?'style="font-weight:bold;background:var(--green-lt)"':''}>
+      <td>${ri+1}</td><td class="name" style="white-space:nowrap">${esc(r.name)}</td>
+      <td class="${total(r)>=0?'plus':'minus'}" style="white-space:nowrap">${total(r).toFixed(1)}</td>
+      <td style="white-space:nowrap">${diff===null?'—':(diff>=0?'+':'')+diff.toFixed(1)}</td>
+      ${Array.from({length:nSec},(_,k)=>`<td>${r.pts[k]===undefined?'':r.pts[k].toFixed(1)}</td>`).join('')}
+      <td class="no-copy"><button class="small danger" data-act="delRow" data-n="${esc(r.name)}">✕</button></td></tr>`;
+  }).join('');
+  const tableCard = `<div class="card"><h2>順位表(${rows.length}名)
+      ${borderTotal!==null?`<span class="badge">昇級ライン ${borderTotal.toFixed(1)}</span>`:''}</h2>
+    ${selfRow ? `<div class="totline">自分: <b>${rows.indexOf(selfRow)+1}位 ${total(selfRow).toFixed(1)}</b>
+      ${borderTotal!==null?`(ライン差 <span class="${total(selfRow)-borderTotal>=0?'plus':'minus'}">${(total(selfRow)-borderTotal>=0?'+':'')+(total(selfRow)-borderTotal).toFixed(1)}</span>)`:''}</div>` : ''}
+    <div style="overflow-x:auto">
+    <table><tr><th>順位</th><th>名前</th><th>Total</th><th>${borderTotal!==null?'ライン差':'自分との差'}</th>
+      ${Array.from({length:nSec},(_,k)=>`<th>${k+1}節</th>`).join('')}<th class="no-copy"></th></tr>
+    ${trs || `<tr><td colspan="${5+nSec}" style="color:var(--sub)">上の欄から結果を取り込んでください</td></tr>`}</table></div>
+  </div>`;
+  // --- 推移グラフ ---
+  const cumOf = r => { let c=0; return [0, ...Array.from({length:nSec},(_,k)=>{ c+=(r.pts[k]||0); return Math.round(c*10); })]; };
+  const series = [];
+  if(selfRow) series.push({name:(e.selfName||'自分'), self:true, color:'#2e7d32', values:cumOf(selfRow)});
+  if(promote>0 && rows.length>=promote && nSec>0){
+    const bvals = [0];
+    for(let k=1;k<=nSec;k++){
+      const tots = rows.map(r=>r.pts.slice(0,k).reduce((a,b)=>a+(b||0),0)).sort((a,b)=>b-a);
+      bvals.push(Math.round(tots[promote-1]*10));
+    }
+    series.push({name:`昇級ライン(${promote}位)`, color:'#c62828', dash:true, values:bvals});
+  }
+  const rival = rows.find(r=>r.name===view.rival);
+  if(rival && !isSelf(rival)) series.push({name:rival.name, color:'#1565c0', values:cumOf(rival)});
+  const rivalOpts = `<option value="">なし</option>` +
+    rows.filter(r=>!isSelf(r)).map(r=>`<option value="${esc(r.name)}" ${r.name===view.rival?'selected':''}>${esc(r.name)}</option>`).join('');
+  const chartCard = `<div class="card"><h2>推移グラフ</h2>
+    ${series.length && nSec>0 ? lineChart(series,'節') : '<div class="cond-note">結果を取り込むとグラフが表示されます(自分の名前を設定してください)</div>'}
+    <div class="no-copy"><label>比較相手を追加</label><select id="t_rival">${rivalOpts}</select></div>
+  </div>`;
+  return setCard + tableCard + chartCard + `
+    <button class="secondary danger no-copy" data-act="clearRows">順位表を全て消去</button>
+    <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
 }
 
 /* ================= プレイヤー帳 ================= */
@@ -961,6 +1081,7 @@ function bind(){
       if(seg.id==='f_mode'){
         document.getElementById('tourOpts').style.display   = b.dataset.m==='tournament' ? '' : 'none';
         document.getElementById('leagueOpts').style.display = b.dataset.m==='league' ? '' : 'none';
+        document.getElementById('tableOpts').style.display  = b.dataset.m==='table' ? '' : 'none';
         document.getElementById('borderOpts').style.display = b.dataset.m==='border' ? '' : 'none';
       }
       if(seg.id==='g_type'){ const e=ev(); const g=e.games.find(g=>g.round===view.round);
@@ -981,6 +1102,14 @@ function bind(){
   if(ls) ls.onchange = ()=>{ if(ls.value==='__new__') quickAddPlayer(ls); };
   const lp = document.getElementById('lg_plot');
   if(lp) lp.onchange = ()=>{ view.plotId = lp.value; render(); };
+  document.querySelectorAll('.tset').forEach(el=> el.onchange = ()=>{
+    const e = ev();
+    e.selfName = document.getElementById('t_self').value.trim();
+    e.promote = Number(document.getElementById('t_promote').value) || null;
+    save(); render();
+  });
+  const rv = document.getElementById('t_rival');
+  if(rv) rv.onchange = ()=>{ view.rival = rv.value; render(); };
   if(document.getElementById('f_self')) refreshSelf();
   const cme = document.getElementById('c_me');
   if(cme) cme.onchange = ()=>{ view.meId = cme.value; render(); };
@@ -1001,6 +1130,16 @@ function act(d, el){
     inp.focus();
   }
   else if(A==='saveGame') saveGame();
+  else if(A==='importTable'){
+    const txt = document.getElementById('t_import').value;
+    const parsed = parseLeagueRows(txt);
+    if(!parsed.length){ alert('取り込める行が見つかりませんでした。HPの表をそのままコピーするか、「名前 12.3 ▲5.0」の形式で入力してください。'); return; }
+    const mode = document.querySelector('#t_imode .on').dataset.m;
+    importRows(ev(), parsed, mode);
+    save(); render();
+  }
+  else if(A==='delRow'){ const e=ev(); e.rows = e.rows.filter(r=>r.name!==d.n); save(); render(); }
+  else if(A==='clearRows'){ if(confirm('順位表を全て消去しますか?')){ ev().rows = []; save(); render(); } }
   else if(A==='delGame'){
     if(confirm('この半荘を削除しますか?')){
       const e = ev();
