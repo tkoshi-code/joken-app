@@ -408,7 +408,11 @@ function vNewEvent(){
     </div>
     <div id="leagueOpts" style="display:none">
       <label>自分</label><select id="f_lself">${plOpts(S.selfId)}</select>
-      <div class="cond-note">リーグ戦・研究会などの成績記録用。半荘を追加していくと累計と推移グラフが見られます。同卓メンバーは半荘ごとに選択できます。</div>
+      <div class="cond-note">リーグ戦・研究会などの成績記録用。半荘を追加していくと累計と推移グラフが見られます。
+      同卓メンバーは大会作成後、半荘ごとに選択します(その場で新規登録も可)。</div>
+    </div>
+    <div id="borderOpts" style="display:none">
+      <div class="cond-note">ワンデー・リーグ戦の通過ライン比較用。自分のトータルポイントとボーダー想定値を手入力するモードのため、メンバー登録は不要です。</div>
     </div>
     <div id="tourOpts">
       <div class="row">
@@ -954,7 +958,11 @@ function bind(){
     seg.querySelectorAll('button').forEach(b=> b.onclick = ()=>{
       seg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
       b.classList.add('on');
-      if(seg.id==='f_mode') document.getElementById('tourOpts').style.display = b.dataset.m==='tournament'?'':'none';
+      if(seg.id==='f_mode'){
+        document.getElementById('tourOpts').style.display   = b.dataset.m==='tournament' ? '' : 'none';
+        document.getElementById('leagueOpts').style.display = b.dataset.m==='league' ? '' : 'none';
+        document.getElementById('borderOpts').style.display = b.dataset.m==='border' ? '' : 'none';
+      }
       if(seg.id==='g_type'){ const e=ev(); const g=e.games.find(g=>g.round===view.round);
         // 切替時に入力タイプだけ変えて再描画
         if(g) upsertGame(e, {...g, inputType:b.dataset.m});
