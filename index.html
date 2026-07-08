@@ -367,12 +367,12 @@ function render(){
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
              presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable, help:vHelp,
-             secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag}[view.name];
+             secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag, events:vEvents}[view.name];
   m.innerHTML = V();
   const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方',
-             secEntry:'節の手入力', myrec:'通算成績', myGame:'対局を記録'}[view.name]
+             secEntry:'節の手入力', myrec:'成績(タグ別)', myGame:'対局を記録', events:'大会一覧'}[view.name]
              || (view.name==='myrecTag' ? (view.tag||'タグなし')
              : ['event','league','table'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
@@ -381,19 +381,37 @@ function render(){
 function ev(){ return S.events.find(e=>e.id===view.evId); }
 
 /* ================= 大会一覧 ================= */
+function eventItem(e){
+  const pr = preset(e.presetId);
+  const sub = e.mode==='tournament'
+    ? `${e.date}・${pr.name}・${e.rounds}回戦 ${e.passCount}位抜け`
+    : e.mode==='league'
+    ? `${e.date}・${pr.name}・記録 ${e.games.length}半荘`
+    : e.mode==='table'
+    ? `${e.date}・順位表 ${(e.rows||[]).length}名`
+    : `${e.date}・${pr.name}・ボーダー比較`;
+  return `<div class="listitem" data-act="openEvent" data-id="${e.id}">
+    <div class="grow"><div class="t">${esc(e.name)}</div><div class="s">${sub}</div></div><div>›</div></div>`;
+}
 function vHome(){
-  const items = S.events.slice().reverse().map(e=>{
-    const pr = preset(e.presetId);
-    const sub = e.mode==='tournament'
-      ? `${e.date}・${pr.name}・${e.rounds}回戦 ${e.passCount}位抜け`
-      : e.mode==='league'
-      ? `${e.date}・${pr.name}・記録 ${e.games.length}半荘`
-      : e.mode==='table'
-      ? `${e.date}・順位表 ${(e.rows||[]).length}名`
-      : `${e.date}・${pr.name}・ボーダー比較`;
-    return `<div class="listitem" data-act="openEvent" data-id="${e.id}">
-      <div class="grow"><div class="t">${esc(e.name)}</div><div class="s">${sub}</div></div><div>›</div></div>`;
-  }).join('') || '<div class="s" style="color:var(--sub);padding:8px">まだ大会がありません</div>';
+  const menu = (act, extra, icon, title, desc) => `<div class="listitem" data-act="${act}" ${extra}>
+    <div style="font-size:26px;margin-right:4px">${icon}</div>
+    <div class="grow"><div class="t">${title}</div><div class="s">${desc}</div></div><div>›</div></div>`;
+  const recent = S.events.slice(-2).reverse();
+  const recentHtml = recent.length
+    ? `<div class="card"><h2>最近の大会</h2>${recent.map(eventItem).join('')}</div>` : '';
+  return recentHtml + `<div class="card"><h2>メニュー</h2>
+    ${menu('newEvent','','🆕','新規大会を作る','トーナメント条件戦 / 対局記録 / リーグ順位表 / ボーダー比較')}
+    ${menu('openEvents','','📂',`大会一覧(${S.events.length}件)`,'作成済みの大会・条件表・順位表を開く')}
+    ${menu('navTo','data-v="myrec"','📈','成績','タグ(リーグ)別に自分の対局を蓄積・推移グラフ')}
+    ${menu('navTo','data-v="players"','👤','プレイヤー帳','対戦相手の登録・通算成績・対戦履歴')}
+    ${menu('help','','📖','使い方ガイド','各機能の操作手順。初めての方はまずこちら')}
+    ${menu('navTo','data-v="settings"','⚙️','設定','カスタムルール・バックアップ(JSON書き出し/復元)')}
+  </div>`;
+}
+function vEvents(){
+  const items = S.events.slice().reverse().map(eventItem).join('')
+    || '<div class="s" style="color:var(--sub);padding:8px">まだ大会がありません</div>';
   return `<div class="card"><h2>大会一覧</h2>${items}</div>
     <button class="primary" data-act="newEvent">＋ 新規大会を作成</button>`;
 }
@@ -1447,6 +1465,8 @@ function bind(){
 function act(d, el){
   const A = d.act;
   if(A==='newEvent') go({name:'newEvent'});
+  else if(A==='openEvents') go({name:'events'});
+  else if(A==='navTo'){ hist.length = 0; go({name:d.v}, false); }
   else if(A==='createEvent') createEvent();
   else if(A==='openEvent'){ const e = S.events.find(x=>x.id===d.id);
     go({name:evView(e), evId:e.id}); }
