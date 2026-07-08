@@ -1,6 +1,6 @@
 ﻿{
-  "name": "さいこーじゃん（SKJ）",
-  "short_name": "さいこーじゃん",
+  "name": "さいこー雀",
+  "short_name": "さいこー雀",
   "description": "麻雀条件戦の条件計算・成績記録アプリ",
   "start_url": "./index.html",
   "scope": "./",

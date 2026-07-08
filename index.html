@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1a5c3a">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>さいこーじゃん（SKJ）</title>
+<title>さいこー雀</title>
 <style>
   :root{
     --green:#1a5c3a; --green-lt:#e8f3ed; --red:#c0392b; --blue:#1a4a7a;
@@ -72,7 +72,7 @@
 </style>
 </head>
 <body>
-<header><button class="back" id="btnBack" style="display:none">‹</button><h1 id="title">さいこーじゃん</h1></header>
+<header><button class="back" id="btnBack" style="display:none">‹</button><h1 id="title">さいこー雀</h1></header>
 <main id="main"></main>
 <nav id="nav">
   <button data-v="home"><span class="ico">🀄</span>大会</button>
@@ -84,8 +84,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.14';
+const APP_VERSION = '1.15';
 const CHANGELOG = [
+  ['1.15','2026-07-09','アプリ名を「さいこー雀」に変更'],
   ['1.14','2026-07-09','タイトルを「さいこーじゃん（SKJ）」に変更、バージョン履歴を追加'],
   ['1.13','2026-07-09','ホームをトップメニュー化(各機能へ説明付きの入口、使い方ガイドを常設)'],
   ['1.12','2026-07-09','成績タブをタグ(リーグ)別表示に再構成。「日付 着順 ポイント」の一括取り込み'],
@@ -387,7 +388,7 @@ function render(){
              secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag, events:vEvents,
              versions:vVersions}[view.name];
   m.innerHTML = V();
-  const T = {home:'さいこーじゃん', players:'プレイヤー帳', settings:'設定', versions:'バージョン履歴',
+  const T = {home:'さいこー雀', players:'プレイヤー帳', settings:'設定', versions:'バージョン履歴',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方',
              secEntry:'節の手入力', myrec:'成績(タグ別)', myGame:'対局を記録', events:'大会一覧'}[view.name]
@@ -426,7 +427,7 @@ function vHome(){
     ${menu('help','','📖','使い方ガイド','各機能の操作手順。初めての方はまずこちら')}
     ${menu('navTo','data-v="settings"','⚙️','設定','カスタムルール・バックアップ(JSON書き出し/復元)')}
   </div>
-  <div class="cond-note no-copy" data-act="versions" style="text-align:center;cursor:pointer">さいこーじゃん（SKJ） v${APP_VERSION} — タップで更新履歴</div>`;
+  <div class="cond-note no-copy" data-act="versions" style="text-align:center;cursor:pointer">さいこー雀 v${APP_VERSION} — タップで更新履歴</div>`;
 }
 function vVersions(){
   return `<div class="card"><h2>バージョン履歴</h2>
@@ -1114,7 +1115,7 @@ function vSettings(){
       <input type="file" id="importFile" accept=".json" style="display:none">
       <div class="cond-note">データはこの端末のブラウザ内にのみ保存されます。機種変更前に必ず書き出してください。</div>
     </div>
-    <div class="cond-note">さいこーじゃん（SKJ） v${APP_VERSION}</div>`;
+    <div class="cond-note">さいこー雀 v${APP_VERSION}</div>`;
 }
 function vPresetEdit(){
   const p = S.customPresets.find(x=>x.id===view.pid)
