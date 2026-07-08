@@ -1,7 +1,7 @@
-{
-  "name": "条件戦サポート",
-  "short_name": "条件戦",
-  "description": "麻雀条件戦のポイント管理・条件計算アプリ",
+﻿{
+  "name": "さいこーじゃん（SKJ）",
+  "short_name": "さいこーじゃん",
+  "description": "麻雀条件戦の条件計算・成績記録アプリ",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

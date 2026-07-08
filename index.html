@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1a5c3a">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>条件戦サポート</title>
+<title>さいこーじゃん（SKJ）</title>
 <style>
   :root{
     --green:#1a5c3a; --green-lt:#e8f3ed; --red:#c0392b; --blue:#1a4a7a;
@@ -72,7 +72,7 @@
 </style>
 </head>
 <body>
-<header><button class="back" id="btnBack" style="display:none">‹</button><h1 id="title">条件戦サポート</h1></header>
+<header><button class="back" id="btnBack" style="display:none">‹</button><h1 id="title">さいこーじゃん</h1></header>
 <main id="main"></main>
 <nav id="nav">
   <button data-v="home"><span class="ico">🀄</span>大会</button>
@@ -84,6 +84,23 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
+const APP_VERSION = '1.14';
+const CHANGELOG = [
+  ['1.14','2026-07-09','タイトルを「さいこーじゃん（SKJ）」に変更、バージョン履歴を追加'],
+  ['1.13','2026-07-09','ホームをトップメニュー化(各機能へ説明付きの入口、使い方ガイドを常設)'],
+  ['1.12','2026-07-09','成績タブをタグ(リーグ)別表示に再構成。「日付 着順 ポイント」の一括取り込み'],
+  ['1.11','2026-07-09','成績タブに「自分のみ記録」(着順とポイントだけの入力)'],
+  ['1.10','2026-07-08','成績タブ新設: 半荘ごとにルール選択・タグ・フリーメモ付きの個人記録帳'],
+  ['1.9','2026-07-08','X結果画像形式の自動判別取り込み、順位表の「節を手入力」「最新節を削除」'],
+  ['1.8','2026-07-08','使い方ガイド(設定内)、順位表の比較相手をプレイヤー帳へワンタップ登録'],
+  ['1.7','2026-07-08','降級指定を「残留は上位何位」方式に変更、推移グラフの比較相手を最大4人に'],
+  ['1.6','2026-07-08','順位表に2段階昇級・降級ライン追加。更新方式を改善(開くだけで最新版に)'],
+  ['1.5','2026-07-08','リーグ順位表モード(公式HP成績表のコピペ取り込み・昇級ライン・節推移グラフ)'],
+  ['1.4','2026-07-07','対局記録(リーグ戦)モードと推移グラフ、新規大会画面の表示不具合修正'],
+  ['1.3','2026-07-07','オーラス判定(ツモ・ロン別の必要打点、放銃許容、流局テンパイ判定)'],
+  ['1.2','2026-07-07','スコア入力に±ボタン追加、入力タイプ切替の不具合修正'],
+  ['1.0','2026-07-07','初版公開: トーナメント条件表・ボーダー比較・プレイヤー帳・PWA対応'],
+];
 const ORGS = ['最高位戦','連盟','協会','RMU','連合','101','その他','一般'];
 const BUILTIN = [
   {id:'saikouisen', name:'最高位戦', start:30000, kaeshi:30000, uma:[30,10,-10,-30], oka:0,  tieRank:'split', kyotakuToTop:false, noten:true,  kiriage:false, builtin:true},
@@ -367,9 +384,10 @@ function render(){
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
              presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable, help:vHelp,
-             secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag, events:vEvents}[view.name];
+             secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag, events:vEvents,
+             versions:vVersions}[view.name];
   m.innerHTML = V();
-  const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
+  const T = {home:'さいこーじゃん', players:'プレイヤー帳', settings:'設定', versions:'バージョン履歴',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方',
              secEntry:'節の手入力', myrec:'成績(タグ別)', myGame:'対局を記録', events:'大会一覧'}[view.name]
@@ -407,6 +425,16 @@ function vHome(){
     ${menu('navTo','data-v="players"','👤','プレイヤー帳','対戦相手の登録・通算成績・対戦履歴')}
     ${menu('help','','📖','使い方ガイド','各機能の操作手順。初めての方はまずこちら')}
     ${menu('navTo','data-v="settings"','⚙️','設定','カスタムルール・バックアップ(JSON書き出し/復元)')}
+  </div>
+  <div class="cond-note no-copy" data-act="versions" style="text-align:center;cursor:pointer">さいこーじゃん（SKJ） v${APP_VERSION} — タップで更新履歴</div>`;
+}
+function vVersions(){
+  return `<div class="card"><h2>バージョン履歴</h2>
+    <div class="cond-note">現在のバージョン: <b>v${APP_VERSION}</b>。この画面の最新行と一致していれば最新版です。
+    オンラインで開き直せば自動で最新版に更新されます。</div>
+    <table><tr><th>Ver</th><th>日付</th><th>内容</th></tr>
+    ${CHANGELOG.map(([v,d,txt])=>`<tr><td style="white-space:nowrap">${v}</td><td style="white-space:nowrap">${d.slice(5).replace('-','/')}</td><td>${esc(txt)}</td></tr>`).join('')}
+    </table>
   </div>`;
 }
 function vEvents(){
@@ -1077,6 +1105,8 @@ function vSettings(){
     <div class="card"><h2>ヘルプ</h2>
       <div class="listitem" data-act="help"><div class="grow"><div class="t">📖 使い方ガイド</div>
       <div class="s">各モードの操作手順と画面の見方</div></div><div>›</div></div>
+      <div class="listitem" data-act="versions"><div class="grow"><div class="t">🕑 バージョン履歴</div>
+      <div class="s">現在 v${APP_VERSION}。最新版かどうかの確認はこちら</div></div><div>›</div></div>
     </div>
     <div class="card"><h2>データ管理</h2>
       <button class="secondary" data-act="export">📤 バックアップ(JSON書き出し)</button>
@@ -1084,7 +1114,7 @@ function vSettings(){
       <input type="file" id="importFile" accept=".json" style="display:none">
       <div class="cond-note">データはこの端末のブラウザ内にのみ保存されます。機種変更前に必ず書き出してください。</div>
     </div>
-    <div class="cond-note">条件戦サポート v1.0</div>`;
+    <div class="cond-note">さいこーじゃん（SKJ） v${APP_VERSION}</div>`;
 }
 function vPresetEdit(){
   const p = S.customPresets.find(x=>x.id===view.pid)
@@ -1487,6 +1517,7 @@ function act(d, el){
   }
   else if(A==='delRow'){ const e=ev(); e.rows = e.rows.filter(r=>r.name!==d.n); save(); render(); }
   else if(A==='help') go({name:'help'});
+  else if(A==='versions') go({name:'versions'});
   else if(A==='secEntry') go({name:'secEntry', evId:view.evId});
   else if(A==='addMyGame') go({name:'myGame', gid:null, tag0:d.tag0});
   else if(A==='openTag') go({name:'myrecTag', tag:d.t});
