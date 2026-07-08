@@ -84,8 +84,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.16';
+const APP_VERSION = '1.17';
 const CHANGELOG = [
+  ['1.17','2026-07-09','大会にリーグ/ワンデー区分・開催場所を追加。リーグは開催日を複数登録可能に'],
   ['1.16','2026-07-09','大会情報(名称・日付・ルール・回戦数・通過人数・同点設定など)を後から編集可能に'],
   ['1.15','2026-07-09','アプリ名を「さいこー雀」に変更'],
   ['1.14','2026-07-09','タイトルを「さいこーじゃん（SKJ）」に変更、バージョン履歴を追加'],
@@ -404,13 +405,16 @@ function ev(){ return S.events.find(e=>e.id===view.evId); }
 /* ================= 大会一覧 ================= */
 function eventItem(e){
   const pr = preset(e.presetId);
+  const dates = (e.dates && e.dates.length) ? e.dates : [e.date];
+  const dstr = dates.length>1 ? `${dates[0]}〜${dates[dates.length-1].slice(5).replace('-','/')}(${dates.length}日)` : (dates[0]||'');
+  const head = `${dstr}${e.kind ? '・'+(e.kind==='league'?'リーグ':'ワンデー') : ''}${e.venue ? '・'+esc(e.venue) : ''}`;
   const sub = e.mode==='tournament'
-    ? `${e.date}・${pr.name}・${e.rounds}回戦 ${e.passCount}位抜け`
+    ? `${head}・${pr.name}・${e.rounds}回戦 ${e.passCount}位抜け`
     : e.mode==='league'
-    ? `${e.date}・${pr.name}・記録 ${e.games.length}半荘`
+    ? `${head}・${pr.name}・記録 ${e.games.length}半荘`
     : e.mode==='table'
-    ? `${e.date}・順位表 ${(e.rows||[]).length}名`
-    : `${e.date}・${pr.name}・ボーダー比較`;
+    ? `${head}・順位表 ${(e.rows||[]).length}名`
+    : `${head}・${pr.name}・ボーダー比較`;
   return `<div class="listitem" data-act="openEvent" data-id="${e.id}">
     <div class="grow"><div class="t">${esc(e.name)}</div><div class="s">${sub}</div></div><div>›</div></div>`;
 }
@@ -452,12 +456,29 @@ function vEventEdit(){
   const e = ev(); const m = e.mode;
   const prOpts = presets().map(p=>`<option value="${p.id}" ${p.id===e.presetId?'selected':''}>${esc(p.name)}</option>`).join('');
   const maxRound = (e.games||[]).reduce((mx,g)=>Math.max(mx,g.round),0);
+  const kind = e.kind || ({league:'league', table:'league'}[m] || 'oneday');
+  const dates = (e.dates && e.dates.length) ? e.dates : [e.date].filter(Boolean);
   return `<div class="card">
     <label>大会名</label><input type="text" id="ee_name" value="${esc(e.name)}">
     <div class="row">
-      <div><label>日付</label><input type="date" id="ee_date" value="${e.date||''}"></div>
-      ${m!=='table' ? `<div><label>ルール</label><select id="ee_preset">${prOpts}</select></div>` : ''}
+      <div><label>区分</label><div class="seg" id="ee_kind" style="margin:0">
+        <button data-m="oneday" class="${kind!=='league'?'on':''}">ワンデー</button>
+        <button data-m="league" class="${kind==='league'?'on':''}">リーグ</button>
+      </div></div>
+      <div><label>開催場所</label><input type="text" id="ee_venue" value="${esc(e.venue||'')}" placeholder="例: 本部道場"></div>
     </div>
+    <div id="ee_date_one" style="${kind==='league'?'display:none':''}">
+      <label>開催日</label><input type="date" id="ee_date" value="${e.date||''}">
+    </div>
+    <div id="ee_dates_league" style="${kind==='league'?'':'display:none'}">
+      <label>開催日(リーグ・複数可)</label>
+      <div id="ee_dates" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">
+        ${dates.map(d=>`<span class="badge" data-d="${d}" style="font-size:13px;padding:4px 8px">${d.slice(5).replace('-','/')} <b data-act="eeDelDate" style="cursor:pointer">✕</b></span>`).join('')}
+      </div>
+      <div class="row"><input type="date" id="ee_newdate">
+        <button class="small primary" data-act="eeAddDate" style="margin:0;flex:0.5">日程を追加</button></div>
+    </div>
+    ${m!=='table' ? `<label>ルール</label><select id="ee_preset">${prOpts}</select>` : ''}
     ${m==='tournament' ? `
       <div class="row">
         <div><label>回戦数</label><select id="ee_rounds">${[2,3,4,5].map(n=>`<option ${n===e.rounds?'selected':''}>${n}</option>`).join('')}</select></div>
@@ -487,9 +508,16 @@ function vNewEvent(){
   return `<div class="card">
     <label>大会名</label><input type="text" id="f_name" placeholder="例: ○○杯 2回戦">
     <div class="row">
-      <div><label>日付</label><input type="date" id="f_date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div><label>日付(初日)</label><input type="date" id="f_date" value="${new Date().toISOString().slice(0,10)}"></div>
       <div><label>ルール</label><select id="f_preset">${prOpts}</select></div>
     </div>
+    <div class="row">
+      <div><label>区分</label><div class="seg" id="f_kind" style="margin:0">
+        <button data-m="oneday" class="on">ワンデー</button><button data-m="league">リーグ</button>
+      </div></div>
+      <div><label>開催場所</label><input type="text" id="f_venue" placeholder="例: 本部道場"></div>
+    </div>
+    <div class="cond-note">リーグの開催日は大会作成後「大会情報を編集」から追加できます。</div>
     <label>モード</label>
     <div class="seg" id="f_mode">
       <button data-m="tournament" class="on">トーナメント</button>
@@ -566,7 +594,10 @@ function createEvent(){
     id:uid(), name:document.getElementById('f_name').value.trim() || '無題の大会',
     date:document.getElementById('f_date').value, mode,
     presetId:document.getElementById('f_preset').value,
+    kind:document.querySelector('#f_kind .on').dataset.m,
+    venue:document.getElementById('f_venue').value.trim(),
   };
+  e.dates = [e.date];
   if(mode === 'tournament'){
     const ids = [0,1,2,3].map(i=>document.getElementById('f_p'+i).value);
     if(ids.some(v=>!v || v==='__new__')){ alert('メンバー4名を選択してください'); return; }
@@ -1485,6 +1516,13 @@ function bind(){
         document.getElementById('leagueOpts').style.display = b.dataset.m==='league' ? '' : 'none';
         document.getElementById('tableOpts').style.display  = b.dataset.m==='table' ? '' : 'none';
         document.getElementById('borderOpts').style.display = b.dataset.m==='border' ? '' : 'none';
+        // 区分の既定値: 対局記録/順位表→リーグ、トーナメント→ワンデー
+        const kd = {tournament:'oneday', league:'league', table:'league', border:'oneday'}[b.dataset.m];
+        document.querySelectorAll('#f_kind button').forEach(x=>x.classList.toggle('on', x.dataset.m===kd));
+      }
+      if(seg.id==='ee_kind'){
+        document.getElementById('ee_date_one').style.display    = b.dataset.m==='league' ? 'none' : '';
+        document.getElementById('ee_dates_league').style.display = b.dataset.m==='league' ? '' : 'none';
       }
       if(seg.id==='g_type'){ const e=ev(); const g=e.games.find(g=>g.round===view.round);
         // 切替時に入力タイプだけ変えて再描画
@@ -1698,11 +1736,36 @@ function act(d, el){
     setTimeout(()=> document.body.addEventListener('click', off, true), 300);
   }
   else if(A==='editEvent') go({name:'eventEdit', evId:view.evId});
+  else if(A==='eeAddDate'){
+    const inp = document.getElementById('ee_newdate');
+    const v = inp.value; if(!v) return;
+    const box = document.getElementById('ee_dates');
+    if([...box.querySelectorAll('[data-d]')].some(x=>x.dataset.d===v)){ inp.value=''; return; }
+    const span = document.createElement('span');
+    span.className = 'badge'; span.dataset.d = v;
+    span.style.cssText = 'font-size:13px;padding:4px 8px';
+    span.innerHTML = `${v.slice(5).replace('-','/')} <b style="cursor:pointer">✕</b>`;
+    span.querySelector('b').onclick = ()=>span.remove();
+    box.appendChild(span); inp.value='';
+  }
+  else if(A==='eeDelDate'){ el.closest('[data-d]').remove(); }
   else if(A==='saveEventEdit'){
     const e = ev();
     const name = document.getElementById('ee_name').value.trim();
     if(name) e.name = name;
-    e.date = document.getElementById('ee_date').value || e.date;
+    e.kind = document.querySelector('#ee_kind .on').dataset.m;
+    e.venue = document.getElementById('ee_venue').value.trim();
+    if(e.kind==='league'){
+      const ds = [...document.querySelectorAll('#ee_dates [data-d]')].map(x=>x.dataset.d);
+      const nv = document.getElementById('ee_newdate').value;
+      if(nv && !ds.includes(nv)) ds.push(nv);
+      ds.sort();
+      if(!ds.length){ alert('開催日を1日以上設定してください'); return; }
+      e.dates = ds; e.date = ds[0];
+    }else{
+      e.date = document.getElementById('ee_date').value || e.date;
+      e.dates = [e.date];
+    }
     const pr = document.getElementById('ee_preset');
     if(pr) e.presetId = pr.value;
     if(e.mode==='tournament'){
