@@ -997,6 +997,7 @@ function playerStats(){
     });
   });
   S.myGames.forEach(g=>{
+    if(g.solo || !g.order) return;
     const res = myPts(g); if(!res) return;
     g.order.forEach((pid,i)=>{
       st[pid] = st[pid] || {games:0, rankSum:0, total:0};
@@ -1023,6 +1024,7 @@ function vPlayerEdit(){
       });
     });
     S.myGames.slice().reverse().forEach(g=>{
+      if(g.solo || !g.order) return;
       const i = g.order.indexOf(p.id); if(i<0) return;
       const res = myPts(g); if(!res) return;
       rows.push(`<tr><td class="name">${(g.date||'').slice(5).replace('-','/')} ${esc(g.tag||'通算記録')}</td><td>${res.ranks[i]}着</td>
@@ -1102,9 +1104,14 @@ function vMyRec(){
   // 通算成績
   let cum=0, n=0, rankSum=0; const dist={1:0,2:0,3:0,4:0}; const series=[0];
   games.forEach(g=>{
-    const r = myPts(g); const i = g.order.indexOf(S.selfId);
-    if(!r || i<0) return;
-    n++; cum += r.pts[i]; const rk = r.ranks[i]; rankSum += rk;
+    let pt10, rk;
+    if(g.solo){ pt10 = Math.round(Number(g.myPt)*10); rk = Number(g.myRank); }
+    else{
+      const r = myPts(g); const i = g.order.indexOf(S.selfId);
+      if(!r || i<0) return;
+      pt10 = r.pts[i]; rk = r.ranks[i];
+    }
+    n++; cum += pt10; rankSum += rk;
     if(Number.isInteger(rk)) dist[rk]++; else { dist[Math.floor(rk)]+=0.5; dist[Math.ceil(rk)]+=0.5; }
     series.push(cum);
   });
@@ -1126,14 +1133,21 @@ function vMyRec(){
     ${lineChart([{name:pname(S.selfId), self:true, color:'#2e7d32', values:series}], '対局数')}
   </div>` : '';
   const items = games.slice().reverse().map(g=>{
-    const r = myPts(g); const i = r ? g.order.indexOf(S.selfId) : -1;
-    const mine = r ? (i>=0 ? `${r.ranks[i]}着 ${fmtP(r.pts[i])}` : '(自分不参加)') : '未入力';
-    const cls = (r && i>=0) ? (r.pts[i]>=0?'plus':'minus') : '';
-    const opps = g.order.filter(p=>p!==S.selfId).map(p=>esc(pname(p))).join('・');
+    let mine, cls, opps;
+    if(g.solo){
+      mine = `${g.myRank}着 ${fmtP(Math.round(Number(g.myPt)*10))}`;
+      cls = Number(g.myPt)>=0?'plus':'minus';
+      opps = '(自分のみ記録)';
+    }else{
+      const r = myPts(g); const i = r ? g.order.indexOf(S.selfId) : -1;
+      mine = r ? (i>=0 ? `${r.ranks[i]}着 ${fmtP(r.pts[i])}` : '(自分不参加)') : '未入力';
+      cls = (r && i>=0) ? (r.pts[i]>=0?'plus':'minus') : '';
+      opps = g.order.filter(p=>p!==S.selfId).map(p=>esc(pname(p))).join('・');
+    }
     return `<div class="listitem" data-act="openMyGame" data-id="${g.id}">
       <div class="grow"><div class="t">${(g.date||'').slice(5).replace('-','/')} <span class="${cls}">${mine}</span>
         <span class="badge">${esc(preset(g.presetId).name)}</span>${g.tag?`<span class="badge">${esc(g.tag)}</span>`:''}</div>
-      <div class="s">vs ${opps}${g.memo?` ｜ 📝${esc(g.memo.slice(0,30))}${g.memo.length>30?'…':''}`:''}</div></div><div>›</div></div>`;
+      <div class="s">${g.solo?opps:`vs ${opps}`}${g.memo?` ｜ 📝${esc(g.memo.slice(0,30))}${g.memo.length>30?'…':''}`:''}</div></div><div>›</div></div>`;
   }).join('');
   return filterCard + statCard + chartCard + `
     <div class="card"><h2>対局履歴(${games.length}件)</h2>${items || '<div style="color:var(--sub);padding:8px">まだ記録がありません</div>'}</div>
@@ -1159,6 +1173,22 @@ function vMyGame(){
       <button class="small secondary" data-act="mgsign" data-i="${i}" style="flex:0 0 46px;width:auto;margin:0;padding:6px 0">±</button>
     </div>`).join('');
   const tags = [...new Set(S.myGames.map(x=>x.tag).filter(Boolean))];
+  const fullBody = `
+    <div class="seg" id="mg_type" style="margin-top:8px">
+      <button data-m="raw" class="${t==='raw'?'on':''}">素点入力(検算あり)</button>
+      <button data-m="pts" class="${t==='pts'?'on':''}">ポイント入力</button>
+    </div>
+    <div class="cond-note">上から起家→南→西→北の席順で入力${pr.tieRank==='seat'?'(同点時は席順で順位決定)':''}</div>
+    ${rows}
+    ${t==='raw'?`<div class="row" style="margin-top:8px"><div><label>供託残り(点)</label>
+      <input type="number" id="mg_kyotaku" inputmode="numeric" step="1000" value="${g.kyotaku||0}"></div></div>`:''}`;
+  const soloBody = `
+    <div class="row" style="margin-top:8px">
+      <div><label>自分の着順</label><select id="mg_rank">${[1,1.5,2,2.5,3,3.5,4].map(r=>`<option ${Number(g.myRank)===r?'selected':''}>${r}</option>`).join('')}</select></div>
+      <div><label>ポイント(±P)</label><input type="number" id="mg_mypt" inputmode="decimal" step="0.1" value="${g.myPt??''}"></div>
+      <button class="small secondary" data-act="mgptsign" style="flex:0 0 46px;width:auto;margin:22px 0 0;padding:8px 0">±</button>
+    </div>
+    <div class="cond-note">自分の結果だけを記録します(検算・対戦相手への紐付けなし)</div>`;
   return `<div class="card">
     <div class="row">
       <div><label>日付</label><input type="date" id="mg_date" value="${g.date||''}"></div>
@@ -1167,14 +1197,11 @@ function vMyGame(){
     <label>タグ(リーグ戦/フリー/セットなど自由に)</label>
     <input type="text" id="mg_tag" list="tagList" value="${esc(g.tag||'')}" placeholder="例: D3リーグ">
     <datalist id="tagList">${tags.map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
-    <div class="seg" id="mg_type" style="margin-top:8px">
-      <button data-m="raw" class="${t==='raw'?'on':''}">素点入力(検算あり)</button>
-      <button data-m="pts" class="${t==='pts'?'on':''}">ポイント入力</button>
+    <div class="seg" id="mg_scope" style="margin-top:8px">
+      <button data-m="full" class="${!g.solo?'on':''}">4人分を記録</button>
+      <button data-m="solo" class="${g.solo?'on':''}">自分のみ記録</button>
     </div>
-    <div class="cond-note">上から起家→南→西→北の席順で入力${pr.tieRank==='seat'?'(同点時は席順で順位決定)':''}</div>
-    ${rows}
-    ${t==='raw'?`<div class="row" style="margin-top:8px"><div><label>供託残り(点)</label>
-      <input type="number" id="mg_kyotaku" inputmode="numeric" step="1000" value="${g.kyotaku||0}"></div></div>`:''}
+    ${g.solo ? soloBody : fullBody}
     <label>メモ(自由記入)</label>
     <textarea id="mg_memo" rows="3" style="width:100%;box-sizing:border-box;font-size:14px" placeholder="ハイライト、反省、卓の状況など">${esc(g.memo||'')}</textarea>
     <div id="mg_check"></div>
@@ -1187,10 +1214,16 @@ function readMG(){
   g.date = document.getElementById('mg_date').value;
   g.presetId = document.getElementById('mg_preset').value;
   g.tag = document.getElementById('mg_tag').value.trim();
-  g.order = [0,1,2,3].map(i=>document.getElementById('mg_p'+i).value);
-  const vals = [0,1,2,3].map(i=>document.getElementById('mg_v'+i).value);
-  if(g.inputType==='raw'){ g.raw = vals; g.kyotaku = document.getElementById('mg_kyotaku')?.value || 0; }
-  else g.pts = vals;
+  if(document.getElementById('mg_rank')){
+    g.myRank = Number(document.getElementById('mg_rank').value);
+    g.myPt = document.getElementById('mg_mypt').value;
+  }
+  if(document.getElementById('mg_p0')){
+    g.order = [0,1,2,3].map(i=>document.getElementById('mg_p'+i).value);
+    const vals = [0,1,2,3].map(i=>document.getElementById('mg_v'+i).value);
+    if(g.inputType==='raw'){ g.raw = vals; g.kyotaku = document.getElementById('mg_kyotaku')?.value || 0; }
+    else g.pts = vals;
+  }
   g.memo = document.getElementById('mg_memo').value;
 }
 
@@ -1334,6 +1367,7 @@ function bind(){
         render();
       }
       if(seg.id==='mg_type'){ readMG(); view.draft.inputType = b.dataset.m; render(); }
+      if(seg.id==='mg_scope'){ readMG(); view.draft.solo = b.dataset.m==='solo'; render(); }
     });
   });
   [0,1,2,3].forEach(i=>{
@@ -1403,10 +1437,24 @@ function act(d, el){
     if(inp.value !== '' && !isNaN(Number(inp.value))) inp.value = String(-Number(inp.value));
     inp.focus();
   }
+  else if(A==='mgptsign'){
+    const inp = document.getElementById('mg_mypt');
+    if(inp.value !== '' && !isNaN(Number(inp.value))) inp.value = String(-Number(inp.value));
+    inp.focus();
+  }
   else if(A==='saveMyGame'){
     readMG();
     const g = view.draft; const pr = preset(g.presetId);
     const chk = document.getElementById('mg_check');
+    if(g.solo){
+      if(g.myPt==='' || isNaN(Number(g.myPt))){ alert('ポイントを入力してください'); return; }
+      const rec = {id:g.id||uid(), date:g.date, presetId:g.presetId, tag:g.tag, solo:true,
+        myRank:Number(g.myRank)||4, myPt:Number(g.myPt), memo:g.memo};
+      const i = S.myGames.findIndex(x=>x.id===rec.id);
+      if(i>=0) S.myGames[i] = rec; else S.myGames.push(rec);
+      view.draft = null; save(); back();
+      return;
+    }
     if(g.order.some(v=>!v || v==='__new__')){ alert('4人のプレイヤーを選択してください'); return; }
     if(new Set(g.order).size !== 4){ alert('プレイヤーが重複しています'); return; }
     const vals = g.inputType==='raw' ? g.raw : g.pts;
@@ -1515,7 +1563,7 @@ function act(d, el){
   }
   else if(A==='delPlayer'){
     const used = S.events.some(e=> (e.playerIds||[]).includes(view.pid) || (e.games||[]).some(g=>g.order.includes(view.pid)))
-      || S.myGames.some(g=>g.order.includes(view.pid));
+      || S.myGames.some(g=>(g.order||[]).includes(view.pid));
     if(used){ alert('大会記録があるプレイヤーは削除できません'); return; }
     if(confirm('削除しますか?')){ S.players = S.players.filter(p=>p.id!==view.pid); save(); back(); }
   }
