@@ -84,8 +84,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.15';
+const APP_VERSION = '1.16';
 const CHANGELOG = [
+  ['1.16','2026-07-09','大会情報(名称・日付・ルール・回戦数・通過人数・同点設定など)を後から編集可能に'],
   ['1.15','2026-07-09','アプリ名を「さいこー雀」に変更'],
   ['1.14','2026-07-09','タイトルを「さいこーじゃん（SKJ）」に変更、バージョン履歴を追加'],
   ['1.13','2026-07-09','ホームをトップメニュー化(各機能へ説明付きの入口、使い方ガイドを常設)'],
@@ -386,12 +387,13 @@ function render(){
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
              presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable, help:vHelp,
              secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag, events:vEvents,
-             versions:vVersions}[view.name];
+             versions:vVersions, eventEdit:vEventEdit}[view.name];
   m.innerHTML = V();
   const T = {home:'さいこー雀', players:'プレイヤー帳', settings:'設定', versions:'バージョン履歴',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方',
-             secEntry:'節の手入力', myrec:'成績(タグ別)', myGame:'対局を記録', events:'大会一覧'}[view.name]
+             secEntry:'節の手入力', myrec:'成績(タグ別)', myGame:'対局を記録', events:'大会一覧',
+             eventEdit:'大会情報を編集'}[view.name]
              || (view.name==='myrecTag' ? (view.tag||'タグなし')
              : ['event','league','table'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
@@ -443,6 +445,39 @@ function vEvents(){
     || '<div class="s" style="color:var(--sub);padding:8px">まだ大会がありません</div>';
   return `<div class="card"><h2>大会一覧</h2>${items}</div>
     <button class="primary" data-act="newEvent">＋ 新規大会を作成</button>`;
+}
+
+/* ================= 大会情報の編集 ================= */
+function vEventEdit(){
+  const e = ev(); const m = e.mode;
+  const prOpts = presets().map(p=>`<option value="${p.id}" ${p.id===e.presetId?'selected':''}>${esc(p.name)}</option>`).join('');
+  const maxRound = (e.games||[]).reduce((mx,g)=>Math.max(mx,g.round),0);
+  return `<div class="card">
+    <label>大会名</label><input type="text" id="ee_name" value="${esc(e.name)}">
+    <div class="row">
+      <div><label>日付</label><input type="date" id="ee_date" value="${e.date||''}"></div>
+      ${m!=='table' ? `<div><label>ルール</label><select id="ee_preset">${prOpts}</select></div>` : ''}
+    </div>
+    ${m==='tournament' ? `
+      <div class="row">
+        <div><label>回戦数</label><select id="ee_rounds">${[2,3,4,5].map(n=>`<option ${n===e.rounds?'selected':''}>${n}</option>`).join('')}</select></div>
+        <div><label>通過人数</label><select id="ee_pass">${[1,2,3].map(n=>`<option value="${n}" ${n===e.passCount?'selected':''}>${n}位抜け</option>`).join('')}</select></div>
+      </div>
+      <label>トータル同点時</label>
+      <div class="seg" id="ee_tie">
+        <button data-m="senchaku" class="${e.tiePolicy==='senchaku'?'on':''}">先着有利</button>
+        <button data-m="oitsuki" class="${e.tiePolicy!=='senchaku'?'on':''}">追いつき有利</button>
+      </div>
+      <label>自分</label><select id="ee_self">${e.playerIds.map(pid=>`<option value="${pid}" ${pid===e.selfId?'selected':''}>${esc(pname(pid))}</option>`).join('')}</select>
+      <div class="cond-note">ルールを変更すると入力済みスコアのポイントも自動で再計算されます。
+      同卓メンバーの変更はできません(その場合は大会を作り直してください)。
+      ${maxRound?`回戦数は入力済みの第${maxRound}回戦より少なくできません。`:''}</div>
+    ` : ''}
+    ${m==='league' ? `<label>自分</label><select id="ee_self">${playerOptions(e.selfId)}</select>
+      <div class="cond-note">ルールを変更すると入力済み半荘のポイントも自動で再計算されます。</div>` : ''}
+    ${m==='border' ? `<div class="cond-note">ルールを変更すると必要素点の計算に反映されます。</div>` : ''}
+    <button class="primary" data-act="saveEventEdit">保存</button>
+  </div>`;
 }
 
 /* ================= 新規大会 ================= */
@@ -605,6 +640,7 @@ function vEvent(){
     <button class="secondary" data-act="final">🎯 オーラス判定(最終局のツモ・ロン条件)</button>`
       : (done>0 && !finished ? `<button class="secondary" data-act="cond">条件表(途中経過: ${done}回戦終了時点)</button>` : '')}
     <div class="card"><h2>スコア入力</h2>${gameRows.join('')}</div>
+    <button class="secondary no-copy" data-act="editEvent">✏️ 大会情報を編集</button>
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
 }
 
@@ -781,6 +817,7 @@ function vBorder(){
       </div>
     </div>
     <button class="primary no-copy" data-act="copyMode">📝 転記モード</button>
+    <button class="secondary no-copy" data-act="editEvent">✏️ 大会情報を編集</button>
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
 }
 
@@ -842,6 +879,7 @@ function vLeague(){
   return statCard + chartCard + `
     <div class="card"><h2>対局記録</h2>${items.join('') || '<div style="color:var(--sub);padding:8px">まだ対局がありません</div>'}</div>
     <button class="primary" data-act="openGame" data-r="${nextRound}">＋ 半荘を追加</button>
+    <button class="secondary no-copy" data-act="editEvent">✏️ 大会情報を編集</button>
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
 }
 function lineChart(series, xLabel='半荘数'){
@@ -1017,6 +1055,7 @@ function vTable(){
   </div>`;
   return setCard + tableCard + chartCard + `
     <button class="secondary danger no-copy" data-act="clearRows">順位表を全て消去</button>
+    <button class="secondary no-copy" data-act="editEvent">✏️ 大会情報を編集</button>
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
 }
 
@@ -1657,6 +1696,30 @@ function act(d, el){
     document.body.classList.add('copy-mode');
     const off = ()=>{ document.body.classList.remove('copy-mode'); document.body.removeEventListener('click', off, true); };
     setTimeout(()=> document.body.addEventListener('click', off, true), 300);
+  }
+  else if(A==='editEvent') go({name:'eventEdit', evId:view.evId});
+  else if(A==='saveEventEdit'){
+    const e = ev();
+    const name = document.getElementById('ee_name').value.trim();
+    if(name) e.name = name;
+    e.date = document.getElementById('ee_date').value || e.date;
+    const pr = document.getElementById('ee_preset');
+    if(pr) e.presetId = pr.value;
+    if(e.mode==='tournament'){
+      const maxRound = e.games.reduce((mx,g)=>Math.max(mx,g.round),0);
+      const rounds = Number(document.getElementById('ee_rounds').value);
+      if(rounds < maxRound){ alert(`第${maxRound}回戦まで入力済みのため、回戦数は${maxRound}未満にできません`); return; }
+      e.rounds = rounds;
+      e.passCount = Number(document.getElementById('ee_pass').value);
+      e.tiePolicy = document.querySelector('#ee_tie .on').dataset.m;
+      e.selfId = document.getElementById('ee_self').value;
+    }
+    if(e.mode==='league'){
+      const s = document.getElementById('ee_self').value;
+      if(!s || s==='__new__'){ alert('「自分」を選択してください'); return; }
+      e.selfId = s;
+    }
+    save(); back();
   }
   else if(A==='delEvent'){ if(confirm('この大会を削除しますか?')){ S.events = S.events.filter(x=>x.id!==view.evId); save(); hist.length=0; go({name:'home'},false);} }
   else if(A==='addPlayer') go({name:'playerEdit', pid:null});
