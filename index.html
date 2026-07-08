@@ -367,13 +367,14 @@ function render(){
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
              presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable, help:vHelp,
-             secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame}[view.name];
+             secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag}[view.name];
   m.innerHTML = V();
   const T = {home:'条件戦サポート', players:'プレイヤー帳', settings:'設定',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方',
              secEntry:'節の手入力', myrec:'通算成績', myGame:'対局を記録'}[view.name]
-             || (['event','league','table'].includes(view.name) ? esc(ev().name) : '');
+             || (view.name==='myrecTag' ? (view.tag||'タグなし')
+             : ['event','league','table'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
   bind();
 }
@@ -1097,13 +1098,34 @@ function vPresetEdit(){
 /* ================= 通算成績(成績タブ) ================= */
 function vMyRec(){
   if(!S.selfId) return `<div class="card"><div class="warn">先に「プレイヤー」タブで自分を登録し、「このプレイヤーは自分」にチェックを入れてください</div></div>`;
-  const tags = [...new Set(S.myGames.map(g=>g.tag).filter(Boolean))];
-  const fr = view.frule||'', ft = view.ftag||'';
-  const games = S.myGames.filter(g=>(!fr || g.presetId===fr) && (!ft || g.tag===ft))
-    .slice().sort((a,b)=> (a.date||'').localeCompare(b.date||'') || S.myGames.indexOf(a)-S.myGames.indexOf(b));
-  // 通算成績
+  const groups = {};
+  S.myGames.forEach(g=>{ const t=g.tag||''; (groups[t]=groups[t]||[]).push(g); });
+  const latest = t => groups[t].reduce((m,g)=>(g.date||'')>m?g.date:m,'');
+  const keys = Object.keys(groups).sort((a,b)=> latest(b).localeCompare(latest(a)));
+  const cards = keys.map(t=>{
+    const st = myRecStats(groups[t]);
+    return `<div class="listitem" data-act="openTag" data-t="${esc(t)}">
+      <div class="grow"><div class="t">${t?esc(t):'タグなし'} <span class="${st.cum>=0?'plus':'minus'}">${fmtP(st.cum)}</span></div>
+      <div class="s">${st.n}対局・平均着順 ${st.n?(st.rankSum/st.n).toFixed(2):'—'}・最終 ${(latest(t)||'').slice(5).replace('-','/')}</div></div><div>›</div></div>`;
+  }).join('');
+  return `<div class="card"><h2>リーグ・カテゴリ別成績(タグごと)</h2>
+    ${cards || '<div style="color:var(--sub);padding:8px">まだ記録がありません。「＋対局を追加」から始めてください</div>'}</div>
+  <button class="primary" data-act="addMyGame">＋ 対局を追加</button>
+  <div class="card no-copy"><h2>まとめて取り込み(自分のみ記録)</h2>
+    <div class="row">
+      <input type="text" id="mi_tag" list="miTagList" placeholder="タグ(例: D3リーグ)" style="flex:1.2">
+      <select id="mi_rule">${presets().map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+    </div>
+    <datalist id="miTagList">${keys.filter(Boolean).map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
+    <textarea id="mi_text" rows="4" style="width:100%;box-sizing:border-box;font-size:14px;margin-top:6px"
+      placeholder="1行=1半荘「日付 着順 ポイント」&#10;例:&#10;7/12 1 60.2&#10;7/12 3 ▲10.1"></textarea>
+    <button class="primary" data-act="importSolo">取り込む</button>
+    <div class="cond-note">Xの結果画像などから自分の各半荘を一括登録する用。▲=マイナス、着順は2.5など0.5刻みも可。</div>
+  </div>`;
+}
+function myRecStats(list){
   let cum=0, n=0, rankSum=0; const dist={1:0,2:0,3:0,4:0}; const series=[0];
-  games.forEach(g=>{
+  list.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(g=>{
     let pt10, rk;
     if(g.solo){ pt10 = Math.round(Number(g.myPt)*10); rk = Number(g.myRank); }
     else{
@@ -1115,14 +1137,22 @@ function vMyRec(){
     if(Number.isInteger(rk)) dist[rk]++; else { dist[Math.floor(rk)]+=0.5; dist[Math.ceil(rk)]+=0.5; }
     series.push(cum);
   });
+  return {cum, n, rankSum, dist, series};
+}
+function vMyRecTag(){
+  const tg = view.tag||'';
+  const fr = view.frule||'';
+  const inTag = S.myGames.filter(g=>(g.tag||'')===tg);
+  const games = inTag.filter(g=>!fr || g.presetId===fr)
+    .slice().sort((a,b)=> (a.date||'').localeCompare(b.date||'') || S.myGames.indexOf(a)-S.myGames.indexOf(b));
+  const {cum, n, rankSum, dist, series} = myRecStats(games);
   const fmtD = v => Number.isInteger(v) ? v : v.toFixed(1);
-  const filterCard = `<div class="card no-copy"><h2>絞り込み</h2>
-    <div class="row">
-      <select id="mr_rule"><option value="">全ルール</option>${presets().map(p=>`<option value="${p.id}" ${p.id===fr?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
-      <select id="mr_tag"><option value="">全タグ</option>${tags.map(t=>`<option ${t===ft?'selected':''}>${esc(t)}</option>`).join('')}</select>
-    </div>
-  </div>`;
-  const statCard = `<div class="card"><h2>${esc(pname(S.selfId))} の通算${fr||ft?'(絞り込み中)':''}</h2>
+  const rules = [...new Set(inTag.map(g=>g.presetId))];
+  const filterCard = rules.length>1 ? `<div class="card no-copy">
+    <label>ルールで絞り込み</label>
+    <select id="mr_rule"><option value="">全ルール</option>${presets().filter(p=>rules.includes(p.id)).map(p=>`<option value="${p.id}" ${p.id===fr?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
+  </div>` : '';
+  const statCard = `<div class="card"><h2>${tg?esc(tg):'タグなし'} の成績${fr?'(絞り込み中)':''}</h2>
     <div class="totline">累計: <span class="${cum>=0?'plus':'minus'}" style="font-size:26px;font-weight:bold">${fmtP(cum)}</span></div>
     ${n ? `<table style="margin-top:8px"><tr><th>対局</th><th>平均着順</th><th>トップ</th><th>2着</th><th>3着</th><th>ラス</th></tr>
       <tr><td>${n}</td><td>${(rankSum/n).toFixed(2)}</td>
@@ -1151,7 +1181,7 @@ function vMyRec(){
   }).join('');
   return filterCard + statCard + chartCard + `
     <div class="card"><h2>対局履歴(${games.length}件)</h2>${items || '<div style="color:var(--sub);padding:8px">まだ記録がありません</div>'}</div>
-    <button class="primary" data-act="addMyGame">＋ 対局を追加</button>`;
+    <button class="primary" data-act="addMyGame" data-tag0="${esc(tg)}">＋ 対局を追加(このタグ)</button>`;
 }
 function vMyGame(){
   if(!view.draft){
@@ -1161,7 +1191,7 @@ function vMyGame(){
     }else{
       const last = S.myGames[S.myGames.length-1];
       view.draft = {id:null, date:new Date().toISOString().slice(0,10), presetId:last?.presetId||'saikouisen',
-        tag:last?.tag||'', order:last?.order?.slice()||[S.selfId,'','',''], inputType:'raw',
+        tag:(view.tag0 !== undefined ? view.tag0 : (last?.tag||'')), order:last?.order?.slice()||[S.selfId,'','',''], inputType:'raw',
         raw:['','','',''], pts:['','','',''], kyotaku:0, memo:''};
     }
   }
@@ -1208,6 +1238,14 @@ function vMyGame(){
     <button class="primary" data-act="saveMyGame">保存</button>
     ${g.id?'<button class="secondary danger" data-act="delMyGame">この対局を削除</button>':''}
   </div>`;
+}
+function normDate(s){
+  s = s.replace(/[．.]/g,'/');
+  let m = s.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/);
+  if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})$/);
+  if(m) return `${new Date().getFullYear()}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  return null;
 }
 function readMG(){
   const g = view.draft;
@@ -1268,8 +1306,8 @@ function vHelp(){
   </div>
   <div class="card"><h2>📈 成績タブ(通算成績)</h2>
     <div class="s">
-    大会とは別に、自分の対局を自由に蓄積する個人記録帳です。「＋対局を追加」で1半荘ずつ、<b>半荘ごとにルールを選んで</b>記録できます(リーグ・タイトル戦・フリー・セット混在OK)。<br><br>
-    <b>タグ</b>(D3リーグ/フリー等)を付けておくと、上部の絞り込みで「最高位戦ルールのみ」「フリーのみ」のような通算成績・推移グラフが見られます。<br><br>
+    大会とは別に、自分の対局を自由に蓄積する個人記録帳です。<b>タグ(リーグ・カテゴリ)ごとにカードが並び</b>、タップするとそのタグの成績・推移グラフ・履歴が見られます。<br><br>
+    「＋対局を追加」で1半荘ずつ、<b>半荘ごとにルールを選んで</b>記録。「4人分」のほか<b>「自分のみ記録」</b>(着順とポイントだけ)も選べます。Xの結果画像などから自分の各半荘をまとめて入れたいときは<b>「まとめて取り込み」</b>に「日付 着順 ポイント」の行を貼り付けてください。<br><br>
     各対局には<b>フリーのメモ欄</b>があり、履歴に📝付きで表示されます。同卓者は「＋新規プレイヤー」でその場でプレイヤー帳に登録でき、対戦履歴・通算成績にも自動反映されます。
     </div>
   </div>
@@ -1430,7 +1468,28 @@ function act(d, el){
   else if(A==='delRow'){ const e=ev(); e.rows = e.rows.filter(r=>r.name!==d.n); save(); render(); }
   else if(A==='help') go({name:'help'});
   else if(A==='secEntry') go({name:'secEntry', evId:view.evId});
-  else if(A==='addMyGame') go({name:'myGame', gid:null});
+  else if(A==='addMyGame') go({name:'myGame', gid:null, tag0:d.tag0});
+  else if(A==='openTag') go({name:'myrecTag', tag:d.t});
+  else if(A==='importSolo'){
+    const tag = document.getElementById('mi_tag').value.trim();
+    const presetId = document.getElementById('mi_rule').value;
+    const lines = document.getElementById('mi_text').value.split(/\r?\n/);
+    let added = 0; const bad = [];
+    lines.forEach(line=>{
+      let t = line.trim(); if(!t) return;
+      t = t.replace(/[▲△]/g,'-').replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0))
+           .replace(/．/g,'.').replace(/[－ー−]/g,'-');
+      const m = t.split(/\s+/);
+      const date = m.length>=3 ? normDate(m[0]) : null;
+      const rank = Number(m[1]), pt = Number(m[2]);
+      if(!date || isNaN(rank) || rank<1 || rank>4 || isNaN(pt)){ bad.push(line); return; }
+      S.myGames.push({id:uid(), date, presetId, tag, solo:true, myRank:rank, myPt:pt, memo:''});
+      added++;
+    });
+    if(!added && !bad.length){ alert('取り込む行がありません'); return; }
+    save(); render();
+    alert(`${added}件を取り込みました${bad.length?`\n読めなかった行:\n${bad.join('\n')}`:''}`);
+  }
   else if(A==='openMyGame') go({name:'myGame', gid:d.id});
   else if(A==='mgsign'){
     const inp = document.getElementById('mg_v'+d.i);
