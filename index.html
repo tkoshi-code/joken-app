@@ -87,8 +87,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.18';
+const APP_VERSION = '1.19';
 const CHANGELOG = [
+  ['1.19','2026-07-09','動画ストックにチャンネル名を追加(URLから自動取得・一覧にも表示)'],
   ['1.18','2026-07-09','実力向上機能を追加: スケジュール管理 / 動画ストック / 局面メモ(牌姿入力・PNG画像で共有)'],
   ['1.17','2026-07-09','大会にリーグ/ワンデー区分・開催場所を追加。リーグは開催日を複数登録可能に'],
   ['1.16','2026-07-09','大会情報(名称・日付・ルール・回戦数・通過人数・同点設定など)を後から編集可能に'],
@@ -1459,7 +1460,7 @@ function vSchedEdit(){
 function vVideos(){
   const items = S.videos.slice().reverse().map(v=>`<div class="listitem" data-act="editVideo" data-id="${v.id}">
     <div class="grow"><div class="t">${esc(v.title||v.url)}</div>
-    <div class="s">${v.added||''}${v.tags?'・'+esc(v.tags):''}${v.memo?' ｜ 📝'+esc(v.memo.slice(0,40))+(v.memo.length>40?'…':''):''}</div></div><div>›</div></div>`).join('');
+    <div class="s">${v.channel?'📺'+esc(v.channel)+'・':''}${v.added||''}${v.tags?'・'+esc(v.tags):''}${v.memo?' ｜ 📝'+esc(v.memo.slice(0,40))+(v.memo.length>40?'…':''):''}</div></div><div>›</div></div>`).join('');
   return `<div class="card"><h2>動画ストック(${S.videos.length})</h2>
     ${items || '<div class="s" style="color:var(--sub);padding:8px">見た動画・見たい動画をURL付きでストックできます</div>'}</div>
   <button class="primary" data-act="editVideo" data-id="">＋ 動画を追加</button>`;
@@ -1472,6 +1473,7 @@ function vVideoEdit(){
     <label>タイトル</label>
     <div class="row"><input type="text" id="vd_title" value="${esc(v.title)}">
       <button class="small secondary" data-act="fetchTitle" style="margin:0;flex:0 0 110px;width:auto">URLから取得</button></div>
+    <label>チャンネル</label><input type="text" id="vd_channel" value="${esc(v.channel||'')}" placeholder="「URLから取得」で自動入力">
     <label>タグ</label><input type="text" id="vd_tags" value="${esc(v.tags||'')}" placeholder="例: 何切る, 押し引き, 対局動画">
     <label>メモ・学び</label><textarea id="vd_memo" rows="4" style="width:100%;box-sizing:border-box;font-size:14px"
       placeholder="要点、学んだこと、見返したい場面(時間)など">${esc(v.memo||'')}</textarea>
@@ -1869,8 +1871,10 @@ function act(d, el){
     el.textContent = '取得中…';
     fetch('https://noembed.com/embed?url='+encodeURIComponent(url))
       .then(r=>r.json())
-      .then(j=>{ if(j && j.title) document.getElementById('vd_title').value = j.title;
-                 else alert('タイトルを自動取得できませんでした。手入力してください。'); })
+      .then(j=>{ if(j && j.title){
+                   document.getElementById('vd_title').value = j.title;
+                   if(j.author_name) document.getElementById('vd_channel').value = j.author_name;
+                 } else alert('タイトルを自動取得できませんでした。手入力してください。'); })
       .catch(()=>alert('取得に失敗しました(オフライン?)。手入力してください。'))
       .finally(()=>{ el.textContent = 'URLから取得'; });
   }
@@ -1881,6 +1885,7 @@ function act(d, el){
     let v = S.videos.find(x=>x.id===view.vid);
     if(!v){ v = {id:uid(), added:new Date().toISOString().slice(0,10)}; S.videos.push(v); }
     v.url = url; v.title = title;
+    v.channel = document.getElementById('vd_channel').value.trim();
     v.tags = document.getElementById('vd_tags').value.trim();
     v.memo = document.getElementById('vd_memo').value;
     save(); back();
