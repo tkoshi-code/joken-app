@@ -68,6 +68,9 @@
   .seg{display:flex; border:1.5px solid var(--green); border-radius:8px; overflow:hidden; margin-top:4px;}
   .seg button{flex:1; padding:8px; border:none; background:#fff; color:var(--green); font-size:14px; cursor:pointer;}
   .seg button.on{background:var(--green); color:#fff; font-weight:bold;}
+  .palrow{display:flex; gap:3px; margin-top:4px; align-items:center;}
+  .palrow span{width:22px; font-size:12px; color:var(--sub); text-align:center;}
+  .pal{flex:1; padding:7px 0; font-size:14px; border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer;}
   .totline{font-size:20px; font-weight:bold;}
 </style>
 </head>
@@ -84,8 +87,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.17';
+const APP_VERSION = '1.18';
 const CHANGELOG = [
+  ['1.18','2026-07-09','実力向上機能を追加: スケジュール管理 / 動画ストック / 局面メモ(牌姿入力・PNG画像で共有)'],
   ['1.17','2026-07-09','大会にリーグ/ワンデー区分・開催場所を追加。リーグは開催日を複数登録可能に'],
   ['1.16','2026-07-09','大会情報(名称・日付・ルール・回戦数・通過人数・同点設定など)を後から編集可能に'],
   ['1.15','2026-07-09','アプリ名を「さいこー雀」に変更'],
@@ -112,6 +116,9 @@ const BUILTIN = [
 ];
 let S = load();
 S.myGames = S.myGames || [];
+S.videos = S.videos || [];
+S.situations = S.situations || [];
+S.schedule = S.schedule || [];
 function load(){
   try{ const d = JSON.parse(localStorage.getItem(LSKEY)); if(d) return d; }catch(e){}
   return {players:[], customPresets:[], events:[], selfId:null};
@@ -388,13 +395,16 @@ function render(){
              event:vEvent, game:vGame, cond:vCond, border:vBorder, playerEdit:vPlayerEdit,
              presetEdit:vPresetEdit, final:vFinal, league:vLeague, table:vTable, help:vHelp,
              secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag, events:vEvents,
-             versions:vVersions, eventEdit:vEventEdit}[view.name];
+             versions:vVersions, eventEdit:vEventEdit,
+             schedule:vSchedule, schedEdit:vSchedEdit, videos:vVideos, videoEdit:vVideoEdit,
+             situations:vSituations, sitEdit:vSitEdit}[view.name];
   m.innerHTML = V();
   const T = {home:'さいこー雀', players:'プレイヤー帳', settings:'設定', versions:'バージョン履歴',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方',
              secEntry:'節の手入力', myrec:'成績(タグ別)', myGame:'対局を記録', events:'大会一覧',
-             eventEdit:'大会情報を編集'}[view.name]
+             eventEdit:'大会情報を編集', schedule:'スケジュール', schedEdit:'予定',
+             videos:'動画ストック', videoEdit:'動画メモ', situations:'局面メモ', sitEdit:'局面を記録'}[view.name]
              || (view.name==='myrecTag' ? (view.tag||'タグなし')
              : ['event','league','table'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
@@ -432,6 +442,11 @@ function vHome(){
     ${menu('navTo','data-v="players"','👤','プレイヤー帳','対戦相手の登録・通算成績・対戦履歴')}
     ${menu('help','','📖','使い方ガイド','各機能の操作手順。初めての方はまずこちら')}
     ${menu('navTo','data-v="settings"','⚙️','設定','カスタムルール・バックアップ(JSON書き出し/復元)')}
+  </div>
+  <div class="card"><h2>実力向上・予定</h2>
+    ${menu('goView','data-v="schedule"','📅','スケジュール','対局・イベントの予定。リーグ開催日は自動で表示')}
+    ${menu('goView','data-v="videos"','🎬','動画ストック','見た動画をタグ・学びメモ付きで蓄積')}
+    ${menu('goView','data-v="situations"','🀄','局面メモ','気になった牌姿を記録。画像にして共有・相談')}
   </div>
   <div class="cond-note no-copy" data-act="versions" style="text-align:center;cursor:pointer">さいこー雀 v${APP_VERSION} — タップで更新履歴</div>`;
 }
@@ -1402,6 +1417,223 @@ function vSecEntry(){
   </div>`;
 }
 
+/* ================= スケジュール ================= */
+function vSchedule(){
+  const today = new Date().toISOString().slice(0,10);
+  const evItems = [];
+  S.events.forEach(e=>{
+    ((e.dates && e.dates.length) ? e.dates : [e.date]).forEach(d=>{
+      if(d) evItems.push({date:d, title:e.name, venue:e.venue||'', evId:e.id});
+    });
+  });
+  const all = evItems.concat(S.schedule.map(s=>({...s, manual:true})))
+    .sort((a,b)=> a.date.localeCompare(b.date) || (a.time||'').localeCompare(b.time||''));
+  const fut = all.filter(x=>x.date>=today);
+  const past = all.filter(x=>x.date<today).slice(-8).reverse();
+  const item = x=>`<div class="listitem" data-act="${x.manual?'editSched':'openEvent'}" data-id="${x.manual?x.id:x.evId}">
+    <div class="grow"><div class="t">${x.date.slice(5).replace('-','/')}${x.time?' '+x.time:''} ${esc(x.title)}</div>
+    <div class="s">${x.venue?esc(x.venue):''}${x.manual?(x.memo?'・'+esc(x.memo):''):'・(大会日程・タップで大会へ)'}</div></div><div>›</div></div>`;
+  return `<div class="card"><h2>今後の予定(${fut.length})</h2>
+    ${fut.map(item).join('') || '<div class="s" style="color:var(--sub);padding:8px">予定はありません</div>'}</div>
+  <button class="primary" data-act="editSched" data-id="">＋ 予定を追加</button>
+  ${past.length?`<div class="card"><h2>過去</h2>${past.map(item).join('')}</div>`:''}
+  <div class="cond-note">大会(リーグの複数開催日を含む)の日程は自動で表示されます。</div>`;
+}
+function vSchedEdit(){
+  const s = S.schedule.find(x=>x.id===view.sid)
+    || {id:null, date:new Date().toISOString().slice(0,10), time:'', title:'', venue:'', memo:''};
+  return `<div class="card">
+    <div class="row">
+      <div><label>日付</label><input type="date" id="sc_date" value="${s.date}"></div>
+      <div><label>時刻(任意)</label><input type="time" id="sc_time" value="${s.time||''}"></div>
+    </div>
+    <label>タイトル</label><input type="text" id="sc_title" value="${esc(s.title)}" placeholder="例: ○○杯 予選 / 研究会">
+    <label>場所</label><input type="text" id="sc_venue" value="${esc(s.venue||'')}">
+    <label>メモ</label><input type="text" id="sc_memo" value="${esc(s.memo||'')}" placeholder="集合時間、持ち物など">
+    <button class="primary" data-act="saveSched">保存</button>
+    ${s.id?'<button class="secondary danger" data-act="delSched">削除</button>':''}
+  </div>`;
+}
+
+/* ================= 動画ストック ================= */
+function vVideos(){
+  const items = S.videos.slice().reverse().map(v=>`<div class="listitem" data-act="editVideo" data-id="${v.id}">
+    <div class="grow"><div class="t">${esc(v.title||v.url)}</div>
+    <div class="s">${v.added||''}${v.tags?'・'+esc(v.tags):''}${v.memo?' ｜ 📝'+esc(v.memo.slice(0,40))+(v.memo.length>40?'…':''):''}</div></div><div>›</div></div>`).join('');
+  return `<div class="card"><h2>動画ストック(${S.videos.length})</h2>
+    ${items || '<div class="s" style="color:var(--sub);padding:8px">見た動画・見たい動画をURL付きでストックできます</div>'}</div>
+  <button class="primary" data-act="editVideo" data-id="">＋ 動画を追加</button>`;
+}
+function vVideoEdit(){
+  const v = S.videos.find(x=>x.id===view.vid)
+    || {id:null, url:'', title:'', tags:'', memo:'', added:new Date().toISOString().slice(0,10)};
+  return `<div class="card">
+    <label>URL(YouTube等)</label><input type="url" id="vd_url" value="${esc(v.url)}" placeholder="https://youtu.be/...">
+    <label>タイトル</label>
+    <div class="row"><input type="text" id="vd_title" value="${esc(v.title)}">
+      <button class="small secondary" data-act="fetchTitle" style="margin:0;flex:0 0 110px;width:auto">URLから取得</button></div>
+    <label>タグ</label><input type="text" id="vd_tags" value="${esc(v.tags||'')}" placeholder="例: 何切る, 押し引き, 対局動画">
+    <label>メモ・学び</label><textarea id="vd_memo" rows="4" style="width:100%;box-sizing:border-box;font-size:14px"
+      placeholder="要点、学んだこと、見返したい場面(時間)など">${esc(v.memo||'')}</textarea>
+    ${v.url?`<button class="secondary" data-act="openUrl" data-u="${esc(v.url)}">▶️ 動画を開く</button>`:''}
+    <button class="primary" data-act="saveVideo">保存</button>
+    ${v.id?'<button class="secondary danger" data-act="delVideo">削除</button>':''}
+  </div>`;
+}
+
+/* ================= 局面メモ(牌姿の記録と画像共有) ================= */
+const HONORS = ['東','南','西','北','白','發','中'];
+const SUIT_LBL = {m:'萬', p:'筒', s:'索'};
+const SUIT_COL = {m:'#b03030', p:'#1558b0', s:'#1a7a3a'};
+function parseTiles(str){
+  const tiles = []; let digits = '';
+  for(const ch of String(str||'').replace(/\s+/g,'')){
+    if(/[0-9]/.test(ch)) digits += ch;
+    else if(/[mps]/.test(ch)){ for(const d of digits) tiles.push({n:Number(d), s:ch}); digits=''; }
+    else if(HONORS.includes(ch)){ digits=''; tiles.push({h:ch}); }
+  }
+  return tiles;
+}
+function tilesToStr(tiles){ return tiles.map(t=>t.h || `${t.n}${t.s}`).join(''); }
+function honorCol(h){ return {白:'#888', 發:'#1a7a3a', 中:'#c22'}[h] || '#222'; }
+function handSVG(str){
+  const tiles = parseTiles(str);
+  if(!tiles.length) return '';
+  const W=34, H=46, G=3;
+  const total = tiles.length*(W+G)+G;
+  const inner = tiles.map((t,i)=>{
+    const x = G+i*(W+G);
+    if(t.h) return `<rect x="${x}" y="4" width="${W}" height="${H}" rx="5" fill="#fffdf5" stroke="#999"/>
+      <text x="${x+W/2}" y="${4+H/2+7}" text-anchor="middle" font-size="20" font-weight="bold" fill="${honorCol(t.h)}">${t.h}</text>`;
+    const red = t.n===0;
+    return `<rect x="${x}" y="4" width="${W}" height="${H}" rx="5" fill="#fffdf5" stroke="#999"/>
+      <text x="${x+W/2}" y="${4+H/2-1}" text-anchor="middle" font-size="19" font-weight="bold" fill="${red?'#c22':'#222'}">${red?5:t.n}</text>
+      <text x="${x+W/2}" y="${4+H-6}" text-anchor="middle" font-size="11" fill="${SUIT_COL[t.s]}">${SUIT_LBL[t.s]}${red?'赤':''}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${total} ${H+8}" style="max-width:100%;height:auto">${inner}</svg>`;
+}
+function vSituations(){
+  const items = S.situations.slice().reverse().map(s=>`<div class="listitem" data-act="editSit" data-id="${s.id}">
+    <div class="grow"><div class="t">${(s.date||'').slice(5).replace('-','/')} ${esc(s.kyoku||'')}</div>
+    <div style="margin:4px 0">${handSVG(s.hand)}</div>
+    <div class="s">${s.dora?'ドラ:'+esc(s.dora)+' ':''}${s.q?'📝'+esc(s.q.slice(0,50))+(s.q.length>50?'…':''):''}</div></div><div>›</div></div>`).join('');
+  return `<div class="card"><h2>局面メモ(${S.situations.length})</h2>
+    ${items || '<div class="s" style="color:var(--sub);padding:8px">気になった牌姿・状況を記録して、あとで人に聞いたり画像で共有できます</div>'}</div>
+  <button class="primary" data-act="editSit" data-id="">＋ 局面を記録</button>`;
+}
+function sitPreview(){
+  const hand = document.getElementById('sit_hand')?.value || '';
+  const dora = document.getElementById('sit_dora')?.value || '';
+  return (hand?handSVG(hand):'<span style="color:var(--sub);font-size:13px">下のパレットか直接入力で手牌を</span>')
+    + (dora?`<div style="font-size:12px;color:var(--sub);margin-top:2px">ドラ</div>${handSVG(dora)}`:'');
+}
+function vSitEdit(){
+  const s = S.situations.find(x=>x.id===view.sid)
+    || {id:null, date:new Date().toISOString().slice(0,10), kyoku:'', hand:'', dora:'', q:''};
+  const palRow = (lbl, suit, col) => `<div class="palrow"><span style="color:${col}">${lbl}</span>
+    ${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button class="pal" data-t="${n}${suit}" style="color:${col}">${n===0?'赤':n}</button>`).join('')}</div>`;
+  return `<div class="card">
+    <div class="row">
+      <div><label>日付</label><input type="date" id="sit_date" value="${s.date}"></div>
+      <div><label>状況(局・巡目など)</label><input type="text" id="sit_kyoku" value="${esc(s.kyoku||'')}" placeholder="例: 東1局8巡目 西家"></div>
+    </div>
+    <label>手牌プレビュー</label>
+    <div id="sit_prev" style="min-height:40px"></div>
+    <label>手牌(タップ or 記法: 234m567p88s東東)</label>
+    <input type="text" id="sit_hand" class="sitfield" value="${esc(s.hand||'')}">
+    <label>ドラ表示牌など</label>
+    <input type="text" id="sit_dora" class="sitfield" value="${esc(s.dora||'')}" placeholder="例: 5p">
+    ${palRow('萬','m',SUIT_COL.m)}${palRow('筒','p',SUIT_COL.p)}${palRow('索','s',SUIT_COL.s)}
+    <div class="palrow"><span>字</span>${HONORS.map(h=>`<button class="pal" data-t="${h}" style="color:${honorCol(h)}">${h}</button>`).join('')}<button class="pal" data-t="del">⌫</button></div>
+    <label>論点・質問(あとで人に聞く用)</label>
+    <textarea id="sit_q" rows="3" style="width:100%;box-sizing:border-box;font-size:14px"
+      placeholder="例: ここから何切る? リーチかダマか? 点数状況は…">${esc(s.q||'')}</textarea>
+    <button class="secondary" data-act="shareSit">📤 画像にして共有</button>
+    <button class="primary" data-act="saveSit">保存</button>
+    ${s.id?'<button class="secondary danger" data-act="delSit">削除</button>':''}
+  </div>`;
+}
+/* 局面を1枚のPNG画像に描画して共有 */
+function shareSitImage(){
+  const date = document.getElementById('sit_date').value;
+  const kyoku = document.getElementById('sit_kyoku').value.trim();
+  const hand = parseTiles(document.getElementById('sit_hand').value);
+  const dora = parseTiles(document.getElementById('sit_dora').value);
+  const q = document.getElementById('sit_q').value.trim();
+  if(!hand.length){ alert('手牌を入力してください'); return; }
+  const W = 900, pad = 40;
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d');
+  if(!ctx.roundRect) ctx.roundRect = function(x,y,w,h){ this.rect(x,y,w,h); }; // 旧iOS用
+  ctx.font = '26px sans-serif';
+  const wrap = (text, maxW) => {
+    const out = [];
+    text.split('\n').forEach(para=>{
+      let line = '';
+      for(const ch of para){
+        if(ctx.measureText(line+ch).width > maxW){ out.push(line); line = ch; } else line += ch;
+      }
+      out.push(line);
+    });
+    return out;
+  };
+  const qLines = q ? wrap(q, W-pad*2) : [];
+  const tileW = Math.min(56, Math.floor((W-pad*2-3*(hand.length-1))/hand.length)), tileH = Math.round(tileW*1.35);
+  const H = 96 + 50 + tileH + 24 + (dora.length? tileH*0.75+46 : 0) + (qLines.length? qLines.length*36+30 : 0) + 56;
+  cv.width = W; cv.height = H;
+  ctx.fillStyle = '#fdfcf7'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#1a5c3a'; ctx.fillRect(0,0,W,64);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 28px sans-serif';
+  ctx.fillText('局面メモ', pad, 42);
+  ctx.font = '22px sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText(`${date}${kyoku?'  '+kyoku:''}`, W-pad, 42);
+  ctx.textAlign = 'left';
+  let y = 96;
+  const drawTiles = (tiles, x0, yy, w, h) => {
+    tiles.forEach((t,i)=>{
+      const x = x0 + i*(w+3);
+      ctx.fillStyle = '#fffdf5'; ctx.strokeStyle = '#999'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(x, yy, w, h, 8); ctx.fill(); ctx.stroke();
+      ctx.textAlign = 'center';
+      if(t.h){
+        ctx.fillStyle = honorCol(t.h); ctx.font = `bold ${Math.round(h*0.45)}px sans-serif`;
+        ctx.fillText(t.h, x+w/2, yy+h*0.62);
+      }else{
+        const red = t.n===0;
+        ctx.fillStyle = red ? '#c22' : '#222'; ctx.font = `bold ${Math.round(h*0.42)}px sans-serif`;
+        ctx.fillText(red?5:t.n, x+w/2, yy+h*0.5);
+        ctx.fillStyle = SUIT_COL[t.s]; ctx.font = `${Math.round(h*0.24)}px sans-serif`;
+        ctx.fillText(SUIT_LBL[t.s]+(red?'赤':''), x+w/2, yy+h*0.88);
+      }
+      ctx.textAlign = 'left';
+    });
+  };
+  drawTiles(hand, pad, y, tileW, tileH);
+  y += tileH + 24;
+  if(dora.length){
+    ctx.fillStyle = '#666'; ctx.font = '22px sans-serif';
+    ctx.fillText('ドラ', pad, y+20);
+    drawTiles(dora, pad+60, y-6, Math.round(tileW*0.75), Math.round(tileH*0.75));
+    y += tileH*0.75 + 46;
+  }
+  if(qLines.length){
+    ctx.fillStyle = '#222'; ctx.font = '26px sans-serif';
+    qLines.forEach(l=>{ ctx.fillText(l, pad, y+26); y += 36; });
+    y += 30;
+  }
+  ctx.fillStyle = '#999'; ctx.font = '18px sans-serif';
+  ctx.fillText('さいこー雀', pad, H-22);
+  cv.toBlob(async b=>{
+    const f = new File([b], 'kyokumen.png', {type:'image/png'});
+    if(navigator.canShare && navigator.canShare({files:[f]})){
+      try{ await navigator.share({files:[f]}); }catch(e){}
+    }else{
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(b); a.download = 'kyokumen.png'; a.click();
+    }
+  });
+}
+
 /* ================= 使い方ガイド ================= */
 function vHelp(){
   return `
@@ -1451,6 +1683,13 @@ function vHelp(){
   </div>
   <div class="card"><h2>📏 ボーダー比較</h2>
     <div class="s">自分の現在トータルを入力し、ボーダー想定値を複数登録すると(楽観/悲観など)、それぞれについて「1着なら素点○○以上」の表が出ます。転記モード対応。</div>
+  </div>
+  <div class="card"><h2>📅🎬🀄 実力向上・予定(ホームのメニューから)</h2>
+    <div class="s">
+    <b>スケジュール</b>: 対局やイベントの予定を追加。大会(リーグの複数開催日を含む)の日程は自動で一覧に出ます。<br><br>
+    <b>動画ストック</b>: 見た動画・見たい動画をURL付きで蓄積。「URLから取得」でタイトルが自動入力され、タグと学びメモを残せます。<br><br>
+    <b>局面メモ</b>: 気になった牌姿をパレット(または「234m567p88s東東」の記法)で入力し、状況・論点と一緒に保存。<b>「📤 画像にして共有」</b>で1枚のPNGになり、LINEやXでそのまま人に聞けます。赤5は各色の「赤」ボタン(記法は0m/0p/0s)。
+    </div>
   </div>
   <div class="card"><h2>💾 データとバックアップ</h2>
     <div class="s">
@@ -1542,6 +1781,17 @@ function bind(){
     const ms = document.getElementById('mg_p'+i);
     if(ms) ms.onchange = ()=>{ if(ms.value==='__new__') quickAddPlayer(ms); };
   });
+  document.querySelectorAll('.pal').forEach(b=> b.onclick = ()=>{
+    const tgt = document.getElementById(window._sitT==='sit_dora' ? 'sit_dora' : 'sit_hand');
+    if(b.dataset.t==='del'){ const ts = parseTiles(tgt.value); ts.pop(); tgt.value = tilesToStr(ts); }
+    else tgt.value += b.dataset.t;
+    document.getElementById('sit_prev').innerHTML = sitPreview();
+  });
+  document.querySelectorAll('.sitfield').forEach(el=>{
+    el.onfocus = ()=>{ window._sitT = el.id; };
+    el.oninput = ()=>{ document.getElementById('sit_prev').innerHTML = sitPreview(); };
+  });
+  if(document.getElementById('sit_prev')) document.getElementById('sit_prev').innerHTML = sitPreview();
   const mrr = document.getElementById('mr_rule');
   if(mrr) mrr.onchange = ()=>{ view.frule = mrr.value; render(); };
   const mrt = document.getElementById('mr_tag');
@@ -1596,6 +1846,61 @@ function act(d, el){
   else if(A==='delRow'){ const e=ev(); e.rows = e.rows.filter(r=>r.name!==d.n); save(); render(); }
   else if(A==='help') go({name:'help'});
   else if(A==='versions') go({name:'versions'});
+  else if(A==='goView') go({name:d.v});
+  else if(A==='openUrl') window.open(d.u, '_blank', 'noopener');
+  else if(A==='editSched') go({name:'schedEdit', sid:d.id||null});
+  else if(A==='saveSched'){
+    const title = document.getElementById('sc_title').value.trim();
+    if(!title){ alert('タイトルを入力してください'); return; }
+    let s = S.schedule.find(x=>x.id===view.sid);
+    if(!s){ s = {id:uid()}; S.schedule.push(s); }
+    s.date = document.getElementById('sc_date').value;
+    s.time = document.getElementById('sc_time').value;
+    s.title = title;
+    s.venue = document.getElementById('sc_venue').value.trim();
+    s.memo = document.getElementById('sc_memo').value.trim();
+    save(); back();
+  }
+  else if(A==='delSched'){ if(confirm('この予定を削除しますか?')){ S.schedule = S.schedule.filter(x=>x.id!==view.sid); save(); back(); } }
+  else if(A==='editVideo') go({name:'videoEdit', vid:d.id||null});
+  else if(A==='fetchTitle'){
+    const url = document.getElementById('vd_url').value.trim();
+    if(!url){ alert('先にURLを入力してください'); return; }
+    el.textContent = '取得中…';
+    fetch('https://noembed.com/embed?url='+encodeURIComponent(url))
+      .then(r=>r.json())
+      .then(j=>{ if(j && j.title) document.getElementById('vd_title').value = j.title;
+                 else alert('タイトルを自動取得できませんでした。手入力してください。'); })
+      .catch(()=>alert('取得に失敗しました(オフライン?)。手入力してください。'))
+      .finally(()=>{ el.textContent = 'URLから取得'; });
+  }
+  else if(A==='saveVideo'){
+    const url = document.getElementById('vd_url').value.trim();
+    const title = document.getElementById('vd_title').value.trim();
+    if(!url && !title){ alert('URLかタイトルを入力してください'); return; }
+    let v = S.videos.find(x=>x.id===view.vid);
+    if(!v){ v = {id:uid(), added:new Date().toISOString().slice(0,10)}; S.videos.push(v); }
+    v.url = url; v.title = title;
+    v.tags = document.getElementById('vd_tags').value.trim();
+    v.memo = document.getElementById('vd_memo').value;
+    save(); back();
+  }
+  else if(A==='delVideo'){ if(confirm('この動画メモを削除しますか?')){ S.videos = S.videos.filter(x=>x.id!==view.vid); save(); back(); } }
+  else if(A==='editSit') go({name:'sitEdit', sid:d.id||null});
+  else if(A==='saveSit'){
+    const hand = document.getElementById('sit_hand').value.trim();
+    if(!hand){ alert('手牌を入力してください'); return; }
+    let s = S.situations.find(x=>x.id===view.sid);
+    if(!s){ s = {id:uid()}; S.situations.push(s); }
+    s.date = document.getElementById('sit_date').value;
+    s.kyoku = document.getElementById('sit_kyoku').value.trim();
+    s.hand = hand;
+    s.dora = document.getElementById('sit_dora').value.trim();
+    s.q = document.getElementById('sit_q').value;
+    save(); back();
+  }
+  else if(A==='delSit'){ if(confirm('この局面メモを削除しますか?')){ S.situations = S.situations.filter(x=>x.id!==view.sid); save(); back(); } }
+  else if(A==='shareSit') shareSitImage();
   else if(A==='secEntry') go({name:'secEntry', evId:view.evId});
   else if(A==='addMyGame') go({name:'myGame', gid:null, tag0:d.tag0});
   else if(A==='openTag') go({name:'myrecTag', tag:d.t});
@@ -1846,7 +2151,7 @@ function act(d, el){
         try{
           const d = JSON.parse(rd.result);
           if(!d.players || !d.events) throw 0;
-          if(confirm('現在のデータを読み込んだ内容で置き換えます。よろしいですか?')){ S = d; S.myGames = S.myGames || []; save(); render(); alert('復元しました'); }
+          if(confirm('現在のデータを読み込んだ内容で置き換えます。よろしいですか?')){ S = d; S.myGames = S.myGames || []; S.videos = S.videos || []; S.situations = S.situations || []; S.schedule = S.schedule || []; save(); render(); alert('復元しました'); }
         }catch(e){ alert('ファイルを読み込めませんでした'); }
       };
       rd.readAsText(file);
