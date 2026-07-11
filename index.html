@@ -87,8 +87,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.19';
+const APP_VERSION = '1.20';
 const CHANGELOG = [
+  ['1.20','2026-07-10','局面メモに写真添付(共有PNGにも合成)、スケジュール一括追加、公式日程の共有配信に対応'],
   ['1.19','2026-07-09','動画ストックにチャンネル名を追加(URLから自動取得・一覧にも表示)'],
   ['1.18','2026-07-09','実力向上機能を追加: スケジュール管理 / 動画ストック / 局面メモ(牌姿入力・PNG画像で共有)'],
   ['1.17','2026-07-09','大会にリーグ/ワンデー区分・開催場所を追加。リーグは開催日を複数登録可能に'],
@@ -125,6 +126,26 @@ function load(){
   return {players:[], customPresets:[], events:[], selfId:null};
 }
 function save(){ localStorage.setItem(LSKEY, JSON.stringify(S)); }
+/* 写真はサイズが大きいためlocalStorageではなくIndexedDBに保存 */
+const idb = {
+  _db: null,
+  open(){ return new Promise((res,rej)=>{
+    if(idb._db) return res(idb._db);
+    const rq = indexedDB.open('jokenapp', 1);
+    rq.onupgradeneeded = ()=> rq.result.createObjectStore('photos');
+    rq.onsuccess = ()=>{ idb._db = rq.result; res(idb._db); };
+    rq.onerror = ()=> rej(rq.error);
+  }); },
+  async put(k, v){ const db = await idb.open(); return new Promise((res,rej)=>{
+    const tx = db.transaction('photos','readwrite'); tx.objectStore('photos').put(v, k);
+    tx.oncomplete = res; tx.onerror = ()=>rej(tx.error); }); },
+  async get(k){ const db = await idb.open(); return new Promise((res,rej)=>{
+    const rq = db.transaction('photos').objectStore('photos').get(k);
+    rq.onsuccess = ()=>res(rq.result); rq.onerror = ()=>rej(rq.error); }); },
+  async del(k){ const db = await idb.open(); return new Promise((res,rej)=>{
+    const tx = db.transaction('photos','readwrite'); tx.objectStore('photos').delete(k);
+    tx.oncomplete = res; tx.onerror = ()=>rej(tx.error); }); },
+};
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function presets(){ return BUILTIN.concat(S.customPresets); }
 function preset(id){ return presets().find(p=>p.id===id) || BUILTIN[0]; }
@@ -1199,7 +1220,8 @@ function vSettings(){
       <button class="secondary" data-act="export">📤 バックアップ(JSON書き出し)</button>
       <button class="secondary" data-act="import">📥 復元(JSON読み込み)</button>
       <input type="file" id="importFile" accept=".json" style="display:none">
-      <div class="cond-note">データはこの端末のブラウザ内にのみ保存されます。機種変更前に必ず書き出してください。</div>
+      <div class="cond-note">データはこの端末のブラウザ内にのみ保存されます。機種変更前に必ず書き出してください。
+      ※局面メモの写真は容量の都合でJSONバックアップに含まれません(牌姿・メモは含まれます)。</div>
     </div>
     <div class="cond-note">さいこー雀 v${APP_VERSION}</div>`;
 }
@@ -1421,24 +1443,38 @@ function vSecEntry(){
 /* ================= スケジュール ================= */
 function vSchedule(){
   const today = new Date().toISOString().slice(0,10);
+  // 共有データ(公式日程など)を取得: GitHub Pages上の全員共通JSON
+  if(window._shared === undefined){
+    window._shared = null;
+    fetch('data/shared.json?t='+Date.now()).then(r=>r.ok?r.json():null)
+      .then(j=>{ window._shared = j || null; if(view.name==='schedule') render(); })
+      .catch(()=>{ window._shared = null; });
+  }
   const evItems = [];
   S.events.forEach(e=>{
     ((e.dates && e.dates.length) ? e.dates : [e.date]).forEach(d=>{
       if(d) evItems.push({date:d, title:e.name, venue:e.venue||'', evId:e.id});
     });
   });
-  const all = evItems.concat(S.schedule.map(s=>({...s, manual:true})))
+  const sharedItems = ((window._shared && window._shared.schedule) || [])
+    .map(s=>({...s, official:true}));
+  const all = evItems.concat(sharedItems).concat(S.schedule.map(s=>({...s, manual:true})))
     .sort((a,b)=> a.date.localeCompare(b.date) || (a.time||'').localeCompare(b.time||''));
   const fut = all.filter(x=>x.date>=today);
   const past = all.filter(x=>x.date<today).slice(-8).reverse();
-  const item = x=>`<div class="listitem" data-act="${x.manual?'editSched':'openEvent'}" data-id="${x.manual?x.id:x.evId}">
-    <div class="grow"><div class="t">${x.date.slice(5).replace('-','/')}${x.time?' '+x.time:''} ${esc(x.title)}</div>
-    <div class="s">${x.venue?esc(x.venue):''}${x.manual?(x.memo?'・'+esc(x.memo):''):'・(大会日程・タップで大会へ)'}</div></div><div>›</div></div>`;
+  const item = x=>`<div class="listitem" ${x.manual?`data-act="editSched" data-id="${x.id}"`:x.evId?`data-act="openEvent" data-id="${x.evId}"`:''} ${x.official?'style="cursor:default"':''}>
+    <div class="grow"><div class="t">${x.date.slice(5).replace('-','/')}${x.time?' '+x.time:''} ${esc(x.title)}${x.official?' <span class="badge">公式</span>':''}</div>
+    <div class="s">${x.venue?esc(x.venue):''}${x.manual?(x.memo?'・'+esc(x.memo):''):x.official?(x.memo?'・'+esc(x.memo):''):'・(大会日程・タップで大会へ)'}</div></div><div>${x.official?'':'›'}</div></div>`;
   return `<div class="card"><h2>今後の予定(${fut.length})</h2>
     ${fut.map(item).join('') || '<div class="s" style="color:var(--sub);padding:8px">予定はありません</div>'}</div>
   <button class="primary" data-act="editSched" data-id="">＋ 予定を追加</button>
+  <div class="card no-copy"><h2>予定の一括追加</h2>
+    <textarea id="sb_text" rows="4" style="width:100%;box-sizing:border-box;font-size:14px"
+      placeholder="1行=1予定「日付 [時刻] タイトル [@場所]」&#10;例:&#10;7/12 11:00 D3リーグ第2節 @本部道場&#10;8/2 研究会"></textarea>
+    <button class="primary" data-act="bulkSched">まとめて追加</button>
+  </div>
   ${past.length?`<div class="card"><h2>過去</h2>${past.map(item).join('')}</div>`:''}
-  <div class="cond-note">大会(リーグの複数開催日を含む)の日程は自動で表示されます。</div>`;
+  <div class="cond-note">大会(リーグの複数開催日を含む)の日程と、配信された公式日程(「公式」バッジ)は自動で表示されます。</div>`;
 }
 function vSchedEdit(){
   const s = S.schedule.find(x=>x.id===view.sid)
@@ -1516,7 +1552,7 @@ function handSVG(str){
 }
 function vSituations(){
   const items = S.situations.slice().reverse().map(s=>`<div class="listitem" data-act="editSit" data-id="${s.id}">
-    <div class="grow"><div class="t">${(s.date||'').slice(5).replace('-','/')} ${esc(s.kyoku||'')}</div>
+    <div class="grow"><div class="t">${(s.date||'').slice(5).replace('-','/')} ${esc(s.kyoku||'')}${s.photo?' 📷':''}</div>
     <div style="margin:4px 0">${handSVG(s.hand)}</div>
     <div class="s">${s.dora?'ドラ:'+esc(s.dora)+' ':''}${s.q?'📝'+esc(s.q.slice(0,50))+(s.q.length>50?'…':''):''}</div></div><div>›</div></div>`).join('');
   return `<div class="card"><h2>局面メモ(${S.situations.length})</h2>
@@ -1547,6 +1583,13 @@ function vSitEdit(){
     <input type="text" id="sit_dora" class="sitfield" value="${esc(s.dora||'')}" placeholder="例: 5p">
     ${palRow('萬','m',SUIT_COL.m)}${palRow('筒','p',SUIT_COL.p)}${palRow('索','s',SUIT_COL.s)}
     <div class="palrow"><span>字</span>${HONORS.map(h=>`<button class="pal" data-t="${h}" style="color:${honorCol(h)}">${h}</button>`).join('')}<button class="pal" data-t="del">⌫</button></div>
+    <label>写真(卓の状況など・任意)</label>
+    <div id="sit_photoPrev">${s.photo?'<div class="s" style="color:var(--sub)">読み込み中…</div>':''}</div>
+    <div class="row no-copy">
+      <button class="small secondary" data-act="pickPhoto" style="margin:0">📷 写真を追加/変更</button>
+      <button class="small danger" data-act="removePhoto" style="margin:0">写真を削除</button>
+    </div>
+    <input type="file" id="sit_photoFile" accept="image/*" style="display:none">
     <label>論点・質問(あとで人に聞く用)</label>
     <textarea id="sit_q" rows="3" style="width:100%;box-sizing:border-box;font-size:14px"
       placeholder="例: ここから何切る? リーチかダマか? 点数状況は…">${esc(s.q||'')}</textarea>
@@ -1555,14 +1598,19 @@ function vSitEdit(){
     ${s.id?'<button class="secondary danger" data-act="delSit">削除</button>':''}
   </div>`;
 }
-/* 局面を1枚のPNG画像に描画して共有 */
-function shareSitImage(){
+/* 局面を1枚のPNG画像に描画して共有(写真があれば合成) */
+async function shareSitImage(){
   const date = document.getElementById('sit_date').value;
   const kyoku = document.getElementById('sit_kyoku').value.trim();
   const hand = parseTiles(document.getElementById('sit_hand').value);
   const dora = parseTiles(document.getElementById('sit_dora').value);
   const q = document.getElementById('sit_q').value.trim();
-  if(!hand.length){ alert('手牌を入力してください'); return; }
+  const photoData = (typeof window._sitPhoto === 'string') ? window._sitPhoto : null;
+  if(!hand.length && !photoData){ alert('手牌か写真を入力してください'); return; }
+  let photoImg = null;
+  if(photoData){
+    photoImg = await new Promise(res=>{ const im = new Image(); im.onload = ()=>res(im); im.onerror = ()=>res(null); im.src = photoData; });
+  }
   const W = 900, pad = 40;
   const cv = document.createElement('canvas');
   const ctx = cv.getContext('2d');
@@ -1580,8 +1628,11 @@ function shareSitImage(){
     return out;
   };
   const qLines = q ? wrap(q, W-pad*2) : [];
-  const tileW = Math.min(56, Math.floor((W-pad*2-3*(hand.length-1))/hand.length)), tileH = Math.round(tileW*1.35);
-  const H = 96 + 50 + tileH + 24 + (dora.length? tileH*0.75+46 : 0) + (qLines.length? qLines.length*36+30 : 0) + 56;
+  const tileW = hand.length ? Math.min(56, Math.floor((W-pad*2-3*(hand.length-1))/hand.length)) : 40;
+  const tileH = Math.round(tileW*1.35);
+  const photoH = photoImg ? Math.min(560, Math.round((W-pad*2)*photoImg.height/photoImg.width)) : 0;
+  const H = 96 + (photoH ? photoH+24 : 0) + (hand.length ? tileH+24 : 0)
+    + (dora.length? tileH*0.75+46 : 0) + (qLines.length? qLines.length*36+30 : 0) + 56;
   cv.width = W; cv.height = H;
   ctx.fillStyle = '#fdfcf7'; ctx.fillRect(0,0,W,H);
   ctx.fillStyle = '#1a5c3a'; ctx.fillRect(0,0,W,64);
@@ -1610,8 +1661,8 @@ function shareSitImage(){
       ctx.textAlign = 'left';
     });
   };
-  drawTiles(hand, pad, y, tileW, tileH);
-  y += tileH + 24;
+  if(photoImg){ ctx.drawImage(photoImg, pad, y, W-pad*2, photoH); y += photoH + 24; }
+  if(hand.length){ drawTiles(hand, pad, y, tileW, tileH); y += tileH + 24; }
   if(dora.length){
     ctx.fillStyle = '#666'; ctx.font = '22px sans-serif';
     ctx.fillText('ドラ', pad, y+20);
@@ -1794,6 +1845,37 @@ function bind(){
     el.oninput = ()=>{ document.getElementById('sit_prev').innerHTML = sitPreview(); };
   });
   if(document.getElementById('sit_prev')) document.getElementById('sit_prev').innerHTML = sitPreview();
+  const spf = document.getElementById('sit_photoFile');
+  if(spf){
+    spf.onchange = ()=>{
+      const f = spf.files[0]; if(!f) return;
+      const rd = new FileReader();
+      rd.onload = ()=>{
+        const img = new Image();
+        img.onload = ()=>{
+          const sc = Math.min(1, 1000/img.width);
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc);
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          window._sitPhoto = cv.toDataURL('image/jpeg', 0.72);
+          document.getElementById('sit_photoPrev').innerHTML = `<img src="${window._sitPhoto}" style="max-width:100%;border-radius:8px">`;
+        };
+        img.src = rd.result;
+      };
+      rd.readAsDataURL(f);
+    };
+    // 保存済み写真の読み込み
+    const s = S.situations.find(x=>x.id===view.sid);
+    if(s && s.photo && window._sitPhoto === null){
+      idb.get('sit_'+s.id).then(v=>{
+        if(v && window._sitPhoto === null){
+          window._sitPhoto = v;
+          const pv = document.getElementById('sit_photoPrev');
+          if(pv) pv.innerHTML = `<img src="${v}" style="max-width:100%;border-radius:8px">`;
+        }
+      }).catch(()=>{});
+    }
+  }
   const mrr = document.getElementById('mr_rule');
   if(mrr) mrr.onchange = ()=>{ view.frule = mrr.value; render(); };
   const mrt = document.getElementById('mr_tag');
@@ -1864,6 +1946,28 @@ function act(d, el){
     save(); back();
   }
   else if(A==='delSched'){ if(confirm('この予定を削除しますか?')){ S.schedule = S.schedule.filter(x=>x.id!==view.sid); save(); back(); } }
+  else if(A==='bulkSched'){
+    const lines = document.getElementById('sb_text').value.split(/\r?\n/);
+    let added = 0; const bad = [];
+    lines.forEach(line=>{
+      const t = line.trim(); if(!t) return;
+      const toks = t.split(/\s+/);
+      const date = normDate(toks[0]);
+      if(!date || toks.length < 2){ bad.push(line); return; }
+      let i = 1, time = '';
+      if(/^\d{1,2}:\d{2}$/.test(toks[1])){ time = toks[1]; i = 2; }
+      let rest = toks.slice(i).join(' ');
+      let venue = '';
+      const vm = rest.match(/@(.+)$/);
+      if(vm){ venue = vm[1].trim(); rest = rest.replace(/@.+$/,'').trim(); }
+      if(!rest){ bad.push(line); return; }
+      S.schedule.push({id:uid(), date, time, title:rest, venue, memo:''});
+      added++;
+    });
+    if(!added && !bad.length){ alert('追加する行がありません'); return; }
+    save(); render();
+    alert(`${added}件を追加しました${bad.length?`\n読めなかった行:\n${bad.join('\n')}`:''}`);
+  }
   else if(A==='editVideo') go({name:'videoEdit', vid:d.id||null});
   else if(A==='fetchTitle'){
     const url = document.getElementById('vd_url').value.trim();
@@ -1891,10 +1995,13 @@ function act(d, el){
     save(); back();
   }
   else if(A==='delVideo'){ if(confirm('この動画メモを削除しますか?')){ S.videos = S.videos.filter(x=>x.id!==view.vid); save(); back(); } }
-  else if(A==='editSit') go({name:'sitEdit', sid:d.id||null});
+  else if(A==='editSit'){ window._sitPhoto = null; go({name:'sitEdit', sid:d.id||null}); }
+  else if(A==='pickPhoto') document.getElementById('sit_photoFile').click();
+  else if(A==='removePhoto'){ window._sitPhoto = false; document.getElementById('sit_photoPrev').innerHTML = ''; }
   else if(A==='saveSit'){
     const hand = document.getElementById('sit_hand').value.trim();
-    if(!hand){ alert('手牌を入力してください'); return; }
+    const hasPhoto = typeof window._sitPhoto === 'string';
+    if(!hand && !hasPhoto){ alert('手牌か写真を入力してください'); return; }
     let s = S.situations.find(x=>x.id===view.sid);
     if(!s){ s = {id:uid()}; S.situations.push(s); }
     s.date = document.getElementById('sit_date').value;
@@ -1902,9 +2009,11 @@ function act(d, el){
     s.hand = hand;
     s.dora = document.getElementById('sit_dora').value.trim();
     s.q = document.getElementById('sit_q').value;
+    if(hasPhoto){ s.photo = true; idb.put('sit_'+s.id, window._sitPhoto).catch(()=>alert('写真の保存に失敗しました')); }
+    else if(window._sitPhoto === false){ s.photo = false; idb.del('sit_'+s.id).catch(()=>{}); }
     save(); back();
   }
-  else if(A==='delSit'){ if(confirm('この局面メモを削除しますか?')){ S.situations = S.situations.filter(x=>x.id!==view.sid); save(); back(); } }
+  else if(A==='delSit'){ if(confirm('この局面メモを削除しますか?')){ idb.del('sit_'+view.sid).catch(()=>{}); S.situations = S.situations.filter(x=>x.id!==view.sid); save(); back(); } }
   else if(A==='shareSit') shareSitImage();
   else if(A==='secEntry') go({name:'secEntry', evId:view.evId});
   else if(A==='addMyGame') go({name:'myGame', gid:null, tag0:d.tag0});

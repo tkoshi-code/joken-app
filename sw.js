@@ -1,4 +1,4 @@
-const CACHE = 'joken-v22';
+const CACHE = 'joken-v23';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -22,7 +22,8 @@ function fetchWithTimeout(req, ms){
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  const isHTML = e.request.mode === 'navigate' || e.request.url.endsWith('/index.html');
+  const isHTML = e.request.mode === 'navigate' || e.request.url.endsWith('/index.html')
+    || e.request.url.includes('/data/shared.json');
   if (isHTML) {
     // HTMLはネットワーク優先(3秒でキャッシュへフォールバック): 常に最新版・オフラインでも起動可
     e.respondWith(
