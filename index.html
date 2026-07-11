@@ -87,8 +87,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.20';
+const APP_VERSION = '1.21';
 const CHANGELOG = [
+  ['1.21','2026-07-10','トーナメントの回戦入力を削除可能に。対局はタップで修正できる旨の案内を各一覧に追加'],
   ['1.20','2026-07-10','局面メモに写真添付(共有PNGにも合成)、スケジュール一括追加、公式日程の共有配信に対応'],
   ['1.19','2026-07-09','動画ストックにチャンネル名を追加(URLから自動取得・一覧にも表示)'],
   ['1.18','2026-07-09','実力向上機能を追加: スケジュール管理 / 動画ストック / 局面メモ(牌姿入力・PNG画像で共有)'],
@@ -707,7 +708,8 @@ function vEvent(){
     ${isFinalNext ? `<button class="primary" data-act="cond">📋 条件表を見る(最終${e.rounds}回戦前)</button>
     <button class="secondary" data-act="final">🎯 オーラス判定(最終局のツモ・ロン条件)</button>`
       : (done>0 && !finished ? `<button class="secondary" data-act="cond">条件表(途中経過: ${done}回戦終了時点)</button>` : '')}
-    <div class="card"><h2>スコア入力</h2>${gameRows.join('')}</div>
+    <div class="card"><h2>スコア入力</h2>${gameRows.join('')}
+    <div class="cond-note">入力済みの回戦もタップすれば修正・削除できます。</div></div>
     <button class="secondary no-copy" data-act="editEvent">✏️ 大会情報を編集</button>
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
 }
@@ -753,7 +755,7 @@ function vGame(){
       <div class="cond-note">${pr.kyotakuToTop ? '※このルールでは供託残はトップの素点に自動加算されます' : '※このルールでは供託残は場から除外(トップ取りなし)'}</div>` : ''}
     <div id="g_check"></div>
     <button class="primary" data-act="saveGame">保存</button>
-    ${isLg && e.games.some(x=>x.round===view.round) ? '<button class="secondary danger" data-act="delGame">この半荘を削除</button>' : ''}
+    ${e.games.some(x=>x.round===view.round) ? `<button class="secondary danger" data-act="delGame">${isLg?'この半荘を削除':'この回戦の入力を削除'}</button>` : ''}
   </div>`;
 }
 function saveGame(){
@@ -945,7 +947,8 @@ function vLeague(){
   });
   const nextRound = e.games.reduce((m,g)=>Math.max(m,g.round),0) + 1;
   return statCard + chartCard + `
-    <div class="card"><h2>対局記録</h2>${items.join('') || '<div style="color:var(--sub);padding:8px">まだ対局がありません</div>'}</div>
+    <div class="card"><h2>対局記録</h2>${items.join('') || '<div style="color:var(--sub);padding:8px">まだ対局がありません</div>'}
+    <div class="cond-note">各半荘はタップで修正・削除できます。</div></div>
     <button class="primary" data-act="openGame" data-r="${nextRound}">＋ 半荘を追加</button>
     <button class="secondary no-copy" data-act="editEvent">✏️ 大会情報を編集</button>
     <button class="secondary danger no-copy" data-act="delEvent">この大会を削除</button>`;
@@ -1337,7 +1340,8 @@ function vMyRecTag(){
       <div class="s">${g.solo?opps:`vs ${opps}`}${g.memo?` ｜ 📝${esc(g.memo.slice(0,30))}${g.memo.length>30?'…':''}`:''}</div></div><div>›</div></div>`;
   }).join('');
   return filterCard + statCard + chartCard + `
-    <div class="card"><h2>対局履歴(${games.length}件)</h2>${items || '<div style="color:var(--sub);padding:8px">まだ記録がありません</div>'}</div>
+    <div class="card"><h2>対局履歴(${games.length}件)</h2>${items || '<div style="color:var(--sub);padding:8px">まだ記録がありません</div>'}
+    <div class="cond-note">各対局はタップで修正・削除できます。</div></div>
     <button class="primary" data-act="addMyGame" data-tag0="${esc(tg)}">＋ 対局を追加(このタグ)</button>`;
 }
 function vMyGame(){
@@ -2134,10 +2138,10 @@ function act(d, el){
   }
   else if(A==='clearRows'){ if(confirm('順位表を全て消去しますか?')){ ev().rows = []; save(); render(); } }
   else if(A==='delGame'){
-    if(confirm('この半荘を削除しますか?')){
-      const e = ev();
+    const e = ev();
+    if(confirm(e.mode==='league' ? 'この半荘を削除しますか?' : 'この回戦の入力を削除しますか?(未入力に戻ります)')){
       e.games = e.games.filter(g=>g.round!==view.round);
-      e.games.sort((a,b)=>a.round-b.round).forEach((g,i)=>g.round=i+1);
+      if(e.mode==='league') e.games.sort((a,b)=>a.round-b.round).forEach((g,i)=>g.round=i+1);
       save(); back();
     }
   }
