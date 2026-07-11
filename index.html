@@ -87,8 +87,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.21';
+const APP_VERSION = '1.22';
 const CHANGELOG = [
+  ['1.22','2026-07-10','プレイヤー帳の対戦履歴から各対局の修正画面を直接開けるように'],
   ['1.21','2026-07-10','トーナメントの回戦入力を削除可能に。対局はタップで修正できる旨の案内を各一覧に追加'],
   ['1.20','2026-07-10','局面メモに写真添付(共有PNGにも合成)、スケジュール一括追加、公式日程の共有配信に対応'],
   ['1.19','2026-07-09','動画ストックにチャンネル名を追加(URLから自動取得・一覧にも表示)'],
@@ -1177,19 +1178,22 @@ function vPlayerEdit(){
         const i = g.order.indexOf(p.id); if(i<0) return;
         const res = gamePts(e,g); if(!res) return;
         const lbl = e.mode==='league' ? `${g.date ? g.date.slice(5).replace('-','/')+' ' : ''}第${g.round}半荘` : `${g.round}回戦`;
-        rows.push(`<tr><td class="name">${esc(e.name)} ${lbl}</td><td>${res.ranks[i]}着</td>
-          <td class="${res.pts[i]>=0?'plus':'minus'}">${fmtP(res.pts[i])}</td></tr>`);
+        rows.push(`<tr data-act="histGo" data-k="ev" data-e="${e.id}" data-r="${g.round}" style="cursor:pointer">
+          <td class="name">${esc(e.name)} ${lbl}</td><td>${res.ranks[i]}着</td>
+          <td class="${res.pts[i]>=0?'plus':'minus'}">${fmtP(res.pts[i])}</td><td>›</td></tr>`);
       });
     });
     S.myGames.slice().reverse().forEach(g=>{
       if(g.solo || !g.order) return;
       const i = g.order.indexOf(p.id); if(i<0) return;
       const res = myPts(g); if(!res) return;
-      rows.push(`<tr><td class="name">${(g.date||'').slice(5).replace('-','/')} ${esc(g.tag||'通算記録')}</td><td>${res.ranks[i]}着</td>
-        <td class="${res.pts[i]>=0?'plus':'minus'}">${fmtP(res.pts[i])}</td></tr>`);
+      rows.push(`<tr data-act="histGo" data-k="my" data-g="${g.id}" style="cursor:pointer">
+        <td class="name">${(g.date||'').slice(5).replace('-','/')} ${esc(g.tag||'通算記録')}</td><td>${res.ranks[i]}着</td>
+        <td class="${res.pts[i]>=0?'plus':'minus'}">${fmtP(res.pts[i])}</td><td>›</td></tr>`);
     });
     if(rows.length) histHtml = `<div class="card"><h2>対戦履歴</h2><table>
-      <tr><th>対局</th><th>着順</th><th>P</th></tr>${rows.join('')}</table></div>`;
+      <tr><th>対局</th><th>着順</th><th>P</th><th></th></tr>${rows.join('')}</table>
+      <div class="cond-note">行をタップするとその対局の修正画面が開きます。</div></div>`;
   }
   return `<div class="card">
     <label>名前</label><input type="text" id="p_name" value="${esc(p.name)}">
@@ -2043,6 +2047,10 @@ function act(d, el){
     alert(`${added}件を取り込みました${bad.length?`\n読めなかった行:\n${bad.join('\n')}`:''}`);
   }
   else if(A==='openMyGame') go({name:'myGame', gid:d.id});
+  else if(A==='histGo'){
+    if(d.k==='my') go({name:'myGame', gid:d.g});
+    else go({name:'game', evId:d.e, round:Number(d.r)});
+  }
   else if(A==='mgsign'){
     const inp = document.getElementById('mg_v'+d.i);
     if(inp.value !== '' && !isNaN(Number(inp.value))) inp.value = String(-Number(inp.value));
