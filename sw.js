@@ -1,4 +1,4 @@
-const CACHE = 'joken-v30';
+const CACHE = 'joken-v31';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
