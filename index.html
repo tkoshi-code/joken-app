@@ -87,8 +87,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.22';
+const APP_VERSION = '1.23';
 const CHANGELOG = [
+  ['1.23','2026-07-12','公式日程(東京)554件を配信開始。スケジュールに表示ON/OFF(直近60日分)を追加'],
   ['1.22','2026-07-10','プレイヤー帳の対戦履歴から各対局の修正画面を直接開けるように'],
   ['1.21','2026-07-10','トーナメントの回戦入力を削除可能に。対局はタップで修正できる旨の案内を各一覧に追加'],
   ['1.20','2026-07-10','局面メモに写真添付(共有PNGにも合成)、スケジュール一括追加、公式日程の共有配信に対応'],
@@ -1464,8 +1465,13 @@ function vSchedule(){
       if(d) evItems.push({date:d, title:e.name, venue:e.venue||'', evId:e.id});
     });
   });
-  const sharedItems = ((window._shared && window._shared.schedule) || [])
-    .map(s=>({...s, official:true}));
+  const showOff = S.showOfficial !== false;
+  const offLimit = new Date(Date.now() + 60*86400000).toISOString().slice(0,10);
+  const sharedItems = showOff
+    ? ((window._shared && window._shared.schedule) || [])
+        .filter(s=>s.date >= today && s.date <= offLimit)
+        .map(s=>({...s, official:true}))
+    : [];
   const all = evItems.concat(sharedItems).concat(S.schedule.map(s=>({...s, manual:true})))
     .sort((a,b)=> a.date.localeCompare(b.date) || (a.time||'').localeCompare(b.time||''));
   const fut = all.filter(x=>x.date>=today);
@@ -1474,6 +1480,8 @@ function vSchedule(){
     <div class="grow"><div class="t">${x.date.slice(5).replace('-','/')}${x.time?' '+x.time:''} ${esc(x.title)}${x.official?' <span class="badge">公式</span>':''}</div>
     <div class="s">${x.venue?esc(x.venue):''}${x.manual?(x.memo?'・'+esc(x.memo):''):x.official?(x.memo?'・'+esc(x.memo):''):'・(大会日程・タップで大会へ)'}</div></div><div>${x.official?'':'›'}</div></div>`;
   return `<div class="card"><h2>今後の予定(${fut.length})</h2>
+    <label class="no-copy" style="display:flex;gap:6px;align-items:center;font-size:13px;margin:0 0 6px">
+      <input type="checkbox" id="sch_off" ${showOff?'checked':''} style="width:auto">公式日程を表示(直近60日分)</label>
     ${fut.map(item).join('') || '<div class="s" style="color:var(--sub);padding:8px">予定はありません</div>'}</div>
   <button class="primary" data-act="editSched" data-id="">＋ 予定を追加</button>
   <div class="card no-copy"><h2>予定の一括追加</h2>
@@ -1482,7 +1490,7 @@ function vSchedule(){
     <button class="primary" data-act="bulkSched">まとめて追加</button>
   </div>
   ${past.length?`<div class="card"><h2>過去</h2>${past.map(item).join('')}</div>`:''}
-  <div class="cond-note">大会(リーグの複数開催日を含む)の日程と、配信された公式日程(「公式」バッジ)は自動で表示されます。</div>`;
+  <div class="cond-note">大会(リーグの複数開催日を含む)の日程は自動表示。「公式」バッジは配信された公式日程(東京)で、直近60日分のみ表示されます。</div>`;
 }
 function vSchedEdit(){
   const s = S.schedule.find(x=>x.id===view.sid)
@@ -1884,6 +1892,8 @@ function bind(){
       }).catch(()=>{});
     }
   }
+  const so = document.getElementById('sch_off');
+  if(so) so.onchange = ()=>{ S.showOfficial = so.checked; save(); render(); };
   const mrr = document.getElementById('mr_rule');
   if(mrr) mrr.onchange = ()=>{ view.frule = mrr.value; render(); };
   const mrt = document.getElementById('mr_tag');
