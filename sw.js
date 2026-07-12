@@ -1,4 +1,4 @@
-const CACHE = 'joken-v27';
+const CACHE = 'joken-v28';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -22,18 +22,20 @@ function fetchWithTimeout(req, ms){
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  const isHTML = e.request.mode === 'navigate' || e.request.url.endsWith('/index.html')
-    || e.request.url.includes('/data/shared.json');
-  if (isHTML) {
-    // HTMLはネットワーク優先(3秒でキャッシュへフォールバック): 常に最新版・オフラインでも起動可
+  const isShared = e.request.url.includes('/data/shared.json');
+  const isHTML = e.request.mode === 'navigate' || e.request.url.endsWith('/index.html');
+  if (isHTML || isShared) {
+    // ネットワーク優先(3秒でキャッシュへフォールバック): 常に最新版・オフラインでも動作
+    // shared.jsonはキャッシュ回避クエリが毎回変わるため、クエリなしのキーで保存/参照する
+    const cacheKey = isShared ? new URL(e.request.url).pathname : e.request;
     e.respondWith(
       fetchWithTimeout(e.request, 3000).then(res => {
         if (res && res.ok) {
           const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
+          caches.open(CACHE).then(c => c.put(cacheKey, clone));
         }
         return res;
-      }).catch(() => caches.match(e.request).then(c => c || caches.match('./index.html')))
+      }).catch(() => caches.match(cacheKey).then(c => c || (isHTML ? caches.match('./index.html') : Response.error())))
     );
     return;
   }
