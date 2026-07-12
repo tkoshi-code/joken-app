@@ -68,6 +68,18 @@
   .seg{display:flex; border:1.5px solid var(--green); border-radius:8px; overflow:hidden; margin-top:4px;}
   .seg button{flex:1; padding:8px; border:none; background:#fff; color:var(--green); font-size:14px; cursor:pointer;}
   .seg button.on{background:var(--green); color:#fff; font-weight:bold;}
+  .calgrid{display:grid; grid-template-columns:repeat(7,1fr); gap:2px;}
+  .caldow{text-align:center; font-size:11px; color:var(--sub); padding:2px 0;}
+  .calcell{min-height:56px; background:#fff; border:1px solid #eee; border-radius:6px; padding:2px; font-size:10px; overflow:hidden; cursor:pointer;}
+  .calcell.empty{background:none; border:none; cursor:default;}
+  .calcell.today{border-color:var(--green);}
+  .calcell.today .caldn{color:var(--green); font-weight:bold;}
+  .calcell.sel{outline:2px solid var(--green);}
+  .caldn{font-size:11px; color:var(--sub);}
+  .calev{border-radius:3px; padding:0 2px; margin-top:1px; white-space:nowrap; overflow:hidden;}
+  .calev.cm{background:var(--green-lt); color:var(--green);}
+  .calev.ce{background:#dbe7f6; color:#1558b0;}
+  .calev.co{background:#ececec; color:#666;}
   .palrow{display:flex; gap:3px; margin-top:4px; align-items:center;}
   .palrow span{width:22px; font-size:12px; color:var(--sub); text-align:center;}
   .pal{flex:1; padding:7px 0; font-size:14px; border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer;}
@@ -87,8 +99,9 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.23';
+const APP_VERSION = '1.24';
 const CHANGELOG = [
+  ['1.24','2026-07-12','スケジュールに月カレンダー表示・フィルター(自分の予定/大会/公式・キーワード)を追加'],
   ['1.23','2026-07-12','公式日程(東京)554件を配信開始。スケジュールに表示ON/OFF(直近60日分)を追加'],
   ['1.22','2026-07-10','プレイヤー帳の対戦履歴から各対局の修正画面を直接開けるように'],
   ['1.21','2026-07-10','トーナメントの回戦入力を削除可能に。対局はタップで修正できる旨の案内を各一覧に追加'],
@@ -1466,22 +1479,77 @@ function vSchedule(){
     });
   });
   const showOff = S.showOfficial !== false;
+  const isMonth = view.calMode === 'month';
+  const ym = view.calYM || today.slice(0,7);
   const offLimit = new Date(Date.now() + 60*86400000).toISOString().slice(0,10);
-  const sharedItems = showOff
-    ? ((window._shared && window._shared.schedule) || [])
-        .filter(s=>s.date >= today && s.date <= offLimit)
-        .map(s=>({...s, official:true}))
+  const officialAll = ((window._shared && window._shared.schedule) || []).map(s=>({...s, official:true}));
+  const offItems = showOff
+    ? officialAll.filter(s=> isMonth ? s.date.startsWith(ym) : (s.date >= today && s.date <= offLimit))
     : [];
-  const all = evItems.concat(sharedItems).concat(S.schedule.map(s=>({...s, manual:true})))
+  // フィルター(種別+キーワード)
+  const src = view.fsrc || 'all';
+  const kw = (view.fkw || '').trim();
+  const match = x =>
+    (src==='all' || (src==='manual' && x.manual) || (src==='event' && x.evId) || (src==='official' && x.official))
+    && (!kw || (x.title||'').includes(kw) || (x.venue||'').includes(kw) || (x.memo||'').includes(kw));
+  const all = evItems.concat(offItems).concat(S.schedule.map(s=>({...s, manual:true})))
+    .filter(match)
     .sort((a,b)=> a.date.localeCompare(b.date) || (a.time||'').localeCompare(b.time||''));
+  const item = x=>`<div class="listitem" ${x.manual?`data-act="editSched" data-id="${x.id}"`:x.evId?`data-act="openEvent" data-id="${x.evId}"`:''} ${x.official?'style="cursor:default"':''}>
+    <div class="grow"><div class="t">${x.date.slice(5).replace('-','/')}${x.time?' '+x.time:''} ${esc(x.title)}${x.official?' <span class="badge">公式</span>':''}${x.evId?' <span class="badge">大会</span>':''}</div>
+    <div class="s">${x.venue?esc(x.venue):''}${x.manual||x.official?(x.memo?'・'+esc(x.memo):''):'・(タップで大会へ)'}</div></div><div>${x.official?'':'›'}</div></div>`;
+  const controls = `<div class="card no-copy">
+    <div class="seg" id="sch_mode">
+      <button data-m="list" class="${!isMonth?'on':''}">リスト</button>
+      <button data-m="month" class="${isMonth?'on':''}">月カレンダー</button>
+    </div>
+    <div class="seg" id="sch_src" style="margin-top:6px">
+      <button data-m="all" class="${src==='all'?'on':''}">すべて</button>
+      <button data-m="manual" class="${src==='manual'?'on':''}">自分の予定</button>
+      <button data-m="event" class="${src==='event'?'on':''}">大会</button>
+      <button data-m="official" class="${src==='official'?'on':''}">公式</button>
+    </div>
+    <input type="text" id="sch_kw" placeholder="キーワードで絞り込み(例: D3、道場)" value="${esc(view.fkw||'')}" style="margin-top:6px">
+    <label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:6px">
+      <input type="checkbox" id="sch_off" ${showOff?'checked':''} style="width:auto">公式日程を表示${isMonth?'':'(リストは直近60日分)'}</label>
+  </div>`;
+  if(isMonth){
+    // ===== 月カレンダー =====
+    const [y, m] = ym.split('-').map(Number);
+    const startDow = new Date(y, m-1, 1).getDay();
+    const daysIn = new Date(y, m, 0).getDate();
+    const byDate = {};
+    all.forEach(x=>{ (byDate[x.date] = byDate[x.date] || []).push(x); });
+    let cells = ['日','月','火','水','木','金','土'].map((d,i)=>`<div class="caldow" style="${i===0?'color:#c22':i===6?'color:#1558b0':''}">${d}</div>`).join('');
+    for(let i=0;i<startDow;i++) cells += '<div class="calcell empty"></div>';
+    for(let d=1; d<=daysIn; d++){
+      const ds = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const evs = byDate[ds] || [];
+      const marks = evs.slice(0,3).map(x=>`<div class="calev ${x.manual?'cm':x.evId?'ce':'co'}">${esc((x.title||'').slice(0,7))}</div>`).join('')
+        + (evs.length>3 ? `<div class="calev">+${evs.length-3}</div>` : '');
+      cells += `<div class="calcell ${ds===today?'today':''} ${view.selDay===ds?'sel':''}" data-act="calDay" data-d="${ds}">
+        <div class="caldn">${d}</div>${marks}</div>`;
+    }
+    const sel = view.selDay && view.selDay.startsWith(ym) ? view.selDay : null;
+    const dayEvs = sel ? (byDate[sel] || []) : [];
+    return controls + `<div class="card">
+      <div class="row no-copy" style="align-items:center">
+        <button class="small secondary" data-act="calPrev" style="margin:0;flex:0 0 44px">‹</button>
+        <div style="text-align:center;font-weight:bold">${y}年${m}月</div>
+        <button class="small secondary" data-act="calNext" style="margin:0;flex:0 0 44px">›</button>
+      </div>
+      <div class="calgrid" style="margin-top:6px">${cells}</div>
+      <div class="cond-note">緑=自分の予定 / 青=大会 / 灰=公式。日付をタップで詳細</div>
+    </div>
+    ${sel ? `<div class="card"><h2>${sel.slice(5).replace('-','/')} の予定(${dayEvs.length})</h2>
+      ${dayEvs.map(item).join('') || '<div class="s" style="color:var(--sub);padding:8px">予定はありません</div>'}
+      <button class="small primary no-copy" data-act="editSched" data-id="" data-date="${sel}" style="margin-top:8px">＋ この日に予定を追加</button>
+    </div>` : ''}`;
+  }
+  // ===== リスト =====
   const fut = all.filter(x=>x.date>=today);
   const past = all.filter(x=>x.date<today).slice(-8).reverse();
-  const item = x=>`<div class="listitem" ${x.manual?`data-act="editSched" data-id="${x.id}"`:x.evId?`data-act="openEvent" data-id="${x.evId}"`:''} ${x.official?'style="cursor:default"':''}>
-    <div class="grow"><div class="t">${x.date.slice(5).replace('-','/')}${x.time?' '+x.time:''} ${esc(x.title)}${x.official?' <span class="badge">公式</span>':''}</div>
-    <div class="s">${x.venue?esc(x.venue):''}${x.manual?(x.memo?'・'+esc(x.memo):''):x.official?(x.memo?'・'+esc(x.memo):''):'・(大会日程・タップで大会へ)'}</div></div><div>${x.official?'':'›'}</div></div>`;
-  return `<div class="card"><h2>今後の予定(${fut.length})</h2>
-    <label class="no-copy" style="display:flex;gap:6px;align-items:center;font-size:13px;margin:0 0 6px">
-      <input type="checkbox" id="sch_off" ${showOff?'checked':''} style="width:auto">公式日程を表示(直近60日分)</label>
+  return controls + `<div class="card"><h2>今後の予定(${fut.length})</h2>
     ${fut.map(item).join('') || '<div class="s" style="color:var(--sub);padding:8px">予定はありません</div>'}</div>
   <button class="primary" data-act="editSched" data-id="">＋ 予定を追加</button>
   <div class="card no-copy"><h2>予定の一括追加</h2>
@@ -1490,11 +1558,11 @@ function vSchedule(){
     <button class="primary" data-act="bulkSched">まとめて追加</button>
   </div>
   ${past.length?`<div class="card"><h2>過去</h2>${past.map(item).join('')}</div>`:''}
-  <div class="cond-note">大会(リーグの複数開催日を含む)の日程は自動表示。「公式」バッジは配信された公式日程(東京)で、直近60日分のみ表示されます。</div>`;
+  <div class="cond-note">大会(リーグの複数開催日を含む)の日程は自動表示。「公式」バッジは配信された公式日程(東京)。</div>`;
 }
 function vSchedEdit(){
   const s = S.schedule.find(x=>x.id===view.sid)
-    || {id:null, date:new Date().toISOString().slice(0,10), time:'', title:'', venue:'', memo:''};
+    || {id:null, date:view.date0 || new Date().toISOString().slice(0,10), time:'', title:'', venue:'', memo:''};
   return `<div class="card">
     <div class="row">
       <div><label>日付</label><input type="date" id="sc_date" value="${s.date}"></div>
@@ -1828,6 +1896,8 @@ function bind(){
         const kd = {tournament:'oneday', league:'league', table:'league', border:'oneday'}[b.dataset.m];
         document.querySelectorAll('#f_kind button').forEach(x=>x.classList.toggle('on', x.dataset.m===kd));
       }
+      if(seg.id==='sch_mode'){ view.calMode = b.dataset.m; render(); }
+      if(seg.id==='sch_src'){ view.fsrc = b.dataset.m; render(); }
       if(seg.id==='ee_kind'){
         document.getElementById('ee_date_one').style.display    = b.dataset.m==='league' ? 'none' : '';
         document.getElementById('ee_dates_league').style.display = b.dataset.m==='league' ? '' : 'none';
@@ -1894,6 +1964,8 @@ function bind(){
   }
   const so = document.getElementById('sch_off');
   if(so) so.onchange = ()=>{ S.showOfficial = so.checked; save(); render(); };
+  const skw = document.getElementById('sch_kw');
+  if(skw) skw.onchange = ()=>{ view.fkw = skw.value; render(); };
   const mrr = document.getElementById('mr_rule');
   if(mrr) mrr.onchange = ()=>{ view.frule = mrr.value; render(); };
   const mrt = document.getElementById('mr_tag');
@@ -1950,7 +2022,17 @@ function act(d, el){
   else if(A==='versions') go({name:'versions'});
   else if(A==='goView') go({name:d.v});
   else if(A==='openUrl') window.open(d.u, '_blank', 'noopener');
-  else if(A==='editSched') go({name:'schedEdit', sid:d.id||null});
+  else if(A==='editSched') go({name:'schedEdit', sid:d.id||null, date0:d.date||null});
+  else if(A==='calDay'){ view.selDay = d.d; render(); }
+  else if(A==='calPrev' || A==='calNext'){
+    const ym = view.calYM || new Date().toISOString().slice(0,7);
+    let [y, m] = ym.split('-').map(Number);
+    m += (A==='calNext' ? 1 : -1);
+    if(m===0){ m=12; y--; } if(m===13){ m=1; y++; }
+    view.calYM = `${y}-${String(m).padStart(2,'0')}`;
+    view.selDay = null;
+    render();
+  }
   else if(A==='saveSched'){
     const title = document.getElementById('sc_title').value.trim();
     if(!title){ alert('タイトルを入力してください'); return; }
