@@ -90,17 +90,18 @@
 <header><button class="back" id="btnBack" style="display:none">‹</button><h1 id="title">さいこー雀</h1></header>
 <main id="main"></main>
 <nav id="nav">
-  <button data-v="home"><span class="ico">🀄</span>大会</button>
+  <button data-v="home"><span class="ico">🏠</span>ホーム</button>
+  <button data-v="schedule"><span class="ico">📅</span>予定</button>
   <button data-v="myrec"><span class="ico">📈</span>成績</button>
-  <button data-v="players"><span class="ico">👤</span>プレイヤー</button>
   <button data-v="settings"><span class="ico">⚙️</span>設定</button>
 </nav>
 <script>
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.27';
+const APP_VERSION = '1.28';
 const CHANGELOG = [
+  ['1.28','2026-07-12','メニューを用途別に再構成(予定/対局・記録/勉強/ガイド・設定)。下部ナビをホーム・予定・成績・設定に変更'],
   ['1.27','2026-07-12','使い方ガイドとREADMEにスケジュール機能(カレンダー・フィルター・公式日程・参加マーク)の説明を追記'],
   ['1.26','2026-07-12','参加登録した公式予定はリストの60日制限・公式表示OFFに関係なく常に表示されるように'],
   ['1.25','2026-07-12','公式予定に「☆参加」ボタンを追加。押すと自分の予定として登録され、フィルター・カレンダー(緑)にも反映'],
@@ -430,7 +431,7 @@ document.querySelectorAll('nav button').forEach(b=>{
 function render(){
   const m = document.getElementById('main');
   document.body.classList.remove('copy-mode');
-  const topLevel = ['home','myrec','players','settings'].includes(view.name);
+  const topLevel = ['home','schedule','myrec','settings'].includes(view.name);
   document.getElementById('btnBack').style.display = topLevel ? 'none' : '';
   document.querySelectorAll('nav button').forEach(b=> b.classList.toggle('on', b.dataset.v===view.name));
   const V = {home:vHome, players:vPlayers, settings:vSettings, newEvent:vNewEvent,
@@ -477,18 +478,22 @@ function vHome(){
   const recent = S.events.slice(-2).reverse();
   const recentHtml = recent.length
     ? `<div class="card"><h2>最近の大会</h2>${recent.map(eventItem).join('')}</div>` : '';
-  return recentHtml + `<div class="card"><h2>メニュー</h2>
-    ${menu('newEvent','','🆕','新規大会を作る','トーナメント条件戦 / 対局記録 / リーグ順位表 / ボーダー比較')}
-    ${menu('openEvents','','📂',`大会一覧(${S.events.length}件)`,'作成済みの大会・条件表・順位表を開く')}
-    ${menu('navTo','data-v="myrec"','📈','成績','タグ(リーグ)別に自分の対局を蓄積・推移グラフ')}
-    ${menu('navTo','data-v="players"','👤','プレイヤー帳','対戦相手の登録・通算成績・対戦履歴')}
+  return `<div class="card"><h2>📅 予定</h2>
+    ${menu('navTo','data-v="schedule"','📅','スケジュール','予定とカレンダー。公式日程(東京)も自動表示')}
+  </div>
+  <div class="card"><h2>✍️ 対局・記録</h2>
+    ${menu('navTo','data-v="myrec"','📈','成績(対局を記録)','自分の半荘を記録。タグ(リーグ)別の通算と推移グラフ')}
+    ${menu('openEvents','','🏆',`大会・条件戦(${S.events.length}件)`,'条件表・オーラス判定・順位表・ボーダー比較。新規作成もこちら')}
+    ${menu('goView','data-v="players"','👤','プレイヤー帳','対戦相手の登録・通算成績・対戦履歴')}
+  </div>
+  ${recentHtml}
+  <div class="card"><h2>📚 勉強</h2>
+    ${menu('goView','data-v="situations"','🀄','局面メモ','気になった牌姿を記録。画像にして共有・相談')}
+    ${menu('goView','data-v="videos"','🎬','動画ストック','見た動画をタグ・学びメモ付きで蓄積')}
+  </div>
+  <div class="card"><h2>ℹ️ ガイド・設定</h2>
     ${menu('help','','📖','使い方ガイド','各機能の操作手順。初めての方はまずこちら')}
     ${menu('navTo','data-v="settings"','⚙️','設定','カスタムルール・バックアップ(JSON書き出し/復元)')}
-  </div>
-  <div class="card"><h2>実力向上・予定</h2>
-    ${menu('goView','data-v="schedule"','📅','スケジュール','対局・イベントの予定。リーグ開催日は自動で表示')}
-    ${menu('goView','data-v="videos"','🎬','動画ストック','見た動画をタグ・学びメモ付きで蓄積')}
-    ${menu('goView','data-v="situations"','🀄','局面メモ','気になった牌姿を記録。画像にして共有・相談')}
   </div>
   <div class="cond-note no-copy" data-act="versions" style="text-align:center;cursor:pointer">さいこー雀 v${APP_VERSION} — タップで更新履歴</div>`;
 }
@@ -1279,7 +1284,8 @@ function vPresetEdit(){
 
 /* ================= 通算成績(成績タブ) ================= */
 function vMyRec(){
-  if(!S.selfId) return `<div class="card"><div class="warn">先に「プレイヤー」タブで自分を登録し、「このプレイヤーは自分」にチェックを入れてください</div></div>`;
+  if(!S.selfId) return `<div class="card"><div class="warn">先にプレイヤー帳で自分を登録し、「このプレイヤーは自分」にチェックを入れてください</div>
+    <button class="primary" data-act="goView" data-v="players">👤 プレイヤー帳を開く</button></div>`;
   const groups = {};
   S.myGames.forEach(g=>{ const t=g.tag||''; (groups[t]=groups[t]||[]).push(g); });
   const latest = t => groups[t].reduce((m,g)=>(g.date||'')>m?g.date:m,'');
