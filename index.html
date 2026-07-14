@@ -99,8 +99,12 @@
 "use strict";
 /* ================= データ ================= */
 const LSKEY = 'jokenapp_v1';
-const APP_VERSION = '1.28';
+const DIAGKEY = 'jokenapp_diag_v1';
+const DIAG_MAX = 100;
+const APP_VERSION = '1.30';
 const CHANGELOG = [
+  ['1.30','2026-07-13','Cloudflare Web Analyticsを導入し、匿名のアクセス数・利用環境・表示性能を確認できるように'],
+  ['1.29','2026-07-13','端末内の診断ログと、問い合わせ用診断情報の確認・コピー・JSON書き出し・消去を追加'],
   ['1.28','2026-07-12','メニューを用途別に再構成(予定/対局・記録/勉強/ガイド・設定)。下部ナビをホーム・予定・成績・設定に変更'],
   ['1.27','2026-07-12','使い方ガイドとREADMEにスケジュール機能(カレンダー・フィルター・公式日程・参加マーク)の説明を追記'],
   ['1.26','2026-07-12','参加登録した公式予定はリストの60日制限・公式表示OFFに関係なく常に表示されるように'],
@@ -136,6 +140,38 @@ const BUILTIN = [
   {id:'classic',    name:'最高位戦Classic', start:30000, kaeshi:30000, uma:[12,4,-4,-12],  oka:0,  tieRank:'split', kyotakuToTop:false, noten:false, kiriage:false, builtin:true},
   {id:'mleague',    name:'Mリーグ', start:25000, kaeshi:30000, uma:[30,10,-10,-30], oka:20, tieRank:'seat',  kyotakuToTop:true,  noten:true,  kiriage:true,  builtin:true},
 ];
+function diagText(v, max=400){
+  return String(v??'').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').slice(0,max);
+}
+function diagSource(v){
+  try{ return new URL(v, location.href).pathname; }catch(e){ return ''; }
+}
+function diagRead(){
+  try{
+    const d = JSON.parse(localStorage.getItem(DIAGKEY));
+    return Array.isArray(d) ? d.slice(-DIAG_MAX) : [];
+  }catch(e){ return []; }
+}
+function diagLog(type, detail={}){
+  try{
+    const logs = diagRead();
+    const clean = {};
+    Object.keys(detail).forEach(k=>{
+      const v = detail[k];
+      clean[k] = typeof v === 'string' ? diagText(v) : (typeof v === 'number' || typeof v === 'boolean' || v===null ? v : diagText(v));
+    });
+    logs.push({at:new Date().toISOString(), version:APP_VERSION, type:diagText(type,80), ...clean});
+    localStorage.setItem(DIAGKEY, JSON.stringify(logs.slice(-DIAG_MAX)));
+  }catch(e){}
+}
+function diagError(type, err, extra={}){
+  const e = err instanceof Error ? err : null;
+  diagLog(type, {...extra,
+    name:diagText(e?.name || 'Error',80),
+    message:diagText(e?.message || err || '不明なエラー'),
+    stack:diagText(e?.stack || '',1200)
+  });
+}
 let S = load();
 S.myGames = S.myGames || [];
 S.videos = S.videos || [];
@@ -143,10 +179,14 @@ S.situations = S.situations || [];
 S.schedule = S.schedule || [];
 S.myMark = S.myMark || [];
 function load(){
-  try{ const d = JSON.parse(localStorage.getItem(LSKEY)); if(d) return d; }catch(e){}
+  try{ const d = JSON.parse(localStorage.getItem(LSKEY)); if(d) return d; }
+  catch(e){ diagError('storage_load_error', e); }
   return {players:[], customPresets:[], events:[], selfId:null};
 }
-function save(){ localStorage.setItem(LSKEY, JSON.stringify(S)); }
+function save(){
+  try{ localStorage.setItem(LSKEY, JSON.stringify(S)); }
+  catch(e){ diagError('storage_save_error', e); throw e; }
+}
 /* 写真はサイズが大きいためlocalStorageではなくIndexedDBに保存 */
 const idb = {
   _db: null,
@@ -155,17 +195,17 @@ const idb = {
     const rq = indexedDB.open('jokenapp', 1);
     rq.onupgradeneeded = ()=> rq.result.createObjectStore('photos');
     rq.onsuccess = ()=>{ idb._db = rq.result; res(idb._db); };
-    rq.onerror = ()=> rej(rq.error);
+    rq.onerror = ()=>{ diagError('indexeddb_error', rq.error, {operation:'open'}); rej(rq.error); };
   }); },
   async put(k, v){ const db = await idb.open(); return new Promise((res,rej)=>{
     const tx = db.transaction('photos','readwrite'); tx.objectStore('photos').put(v, k);
-    tx.oncomplete = res; tx.onerror = ()=>rej(tx.error); }); },
+    tx.oncomplete = res; tx.onerror = ()=>{ diagError('indexeddb_error', tx.error, {operation:'put'}); rej(tx.error); }; }); },
   async get(k){ const db = await idb.open(); return new Promise((res,rej)=>{
     const rq = db.transaction('photos').objectStore('photos').get(k);
-    rq.onsuccess = ()=>res(rq.result); rq.onerror = ()=>rej(rq.error); }); },
+    rq.onsuccess = ()=>res(rq.result); rq.onerror = ()=>{ diagError('indexeddb_error', rq.error, {operation:'get'}); rej(rq.error); }; }); },
   async del(k){ const db = await idb.open(); return new Promise((res,rej)=>{
     const tx = db.transaction('photos','readwrite'); tx.objectStore('photos').delete(k);
-    tx.oncomplete = res; tx.onerror = ()=>rej(tx.error); }); },
+    tx.oncomplete = res; tx.onerror = ()=>{ diagError('indexeddb_error', tx.error, {operation:'delete'}); rej(tx.error); }; }); },
 };
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function presets(){ return BUILTIN.concat(S.customPresets); }
@@ -173,6 +213,43 @@ function preset(id){ return presets().find(p=>p.id===id) || BUILTIN[0]; }
 function player(id){ return S.players.find(p=>p.id===id); }
 function pname(id){ const p = player(id); return p ? p.name : '?'; }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function diagReport(){
+  let timezone = '';
+  try{ timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }catch(e){}
+  return {
+    schemaVersion: 1,
+    createdAt: new Date().toISOString(),
+    app: {name:'さいこー雀', version:APP_VERSION},
+    environment: {
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      timezone,
+      online: navigator.onLine,
+      standalone: matchMedia('(display-mode: standalone)').matches || navigator.standalone===true,
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
+      screen: `${screen.width}x${screen.height}`,
+      serviceWorkerControlled: !!navigator.serviceWorker?.controller
+    },
+    dataCounts: {
+      players: S.players.length,
+      events: S.events.length,
+      eventGames: S.events.reduce((n,e)=>n+(e.games||[]).length,0),
+      personalGames: S.myGames.length,
+      schedules: S.schedule.length,
+      videos: S.videos.length,
+      situations: S.situations.length
+    },
+    logs: diagRead()
+  };
+}
+function diagReportText(){ return JSON.stringify(diagReport(), null, 2); }
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  const ok = document.execCommand('copy'); ta.remove();
+  return ok;
+}
 
 /* ================= 計算コア =================
    ポイントは内部で「tenths」(0.1P単位の数値)で扱い、丸め誤差を避ける */
@@ -422,8 +499,19 @@ function finalResults(e){
 /* ================= 画面遷移 ================= */
 let view = {name:'home'};
 const hist = [];
-function go(v, push=true){ if(push) hist.push(view); view = v; render(); window.scrollTo(0,0); }
-function back(){ view = hist.pop() || {name:'home'}; render(); }
+function go(v, push=true){
+  const from = view.name;
+  if(push) hist.push(view);
+  view = v;
+  diagLog('view_change', {from, to:view.name});
+  render(); window.scrollTo(0,0);
+}
+function back(){
+  const from = view.name;
+  view = hist.pop() || {name:'home'};
+  diagLog('view_change', {from, to:view.name, method:'back'});
+  render();
+}
 document.getElementById('btnBack').onclick = back;
 document.querySelectorAll('nav button').forEach(b=>{
   b.onclick = ()=>{ hist.length = 0; go({name:b.dataset.v}, false); };
@@ -440,14 +528,15 @@ function render(){
              secEntry:vSecEntry, myrec:vMyRec, myGame:vMyGame, myrecTag:vMyRecTag, events:vEvents,
              versions:vVersions, eventEdit:vEventEdit,
              schedule:vSchedule, schedEdit:vSchedEdit, videos:vVideos, videoEdit:vVideoEdit,
-             situations:vSituations, sitEdit:vSitEdit}[view.name];
+             situations:vSituations, sitEdit:vSitEdit, diagnostics:vDiagnostics}[view.name];
   m.innerHTML = V();
   const T = {home:'さいこー雀', players:'プレイヤー帳', settings:'設定', versions:'バージョン履歴',
              newEvent:'新規大会', game:'スコア入力', cond:'条件表', border:'ボーダー比較',
              playerEdit:'プレイヤー編集', presetEdit:'カスタムルール', final:'オーラス判定', help:'使い方',
              secEntry:'節の手入力', myrec:'成績(タグ別)', myGame:'対局を記録', events:'大会一覧',
              eventEdit:'大会情報を編集', schedule:'スケジュール', schedEdit:'予定',
-             videos:'動画ストック', videoEdit:'動画メモ', situations:'局面メモ', sitEdit:'局面を記録'}[view.name]
+             videos:'動画ストック', videoEdit:'動画メモ', situations:'局面メモ', sitEdit:'局面を記録',
+             diagnostics:'問い合わせ用診断情報'}[view.name]
              || (view.name==='myrecTag' ? (view.tag||'タグなし')
              : ['event','league','table'].includes(view.name) ? esc(ev().name) : '');
   document.getElementById('title').textContent = T.replace(/&amp;/g,'&');
@@ -1253,7 +1342,25 @@ function vSettings(){
       <div class="cond-note">データはこの端末のブラウザ内にのみ保存されます。機種変更前に必ず書き出してください。
       ※局面メモの写真は容量の都合でJSONバックアップに含まれません(牌姿・メモは含まれます)。</div>
     </div>
+    <div class="card"><h2>サポート</h2>
+      <div class="listitem" data-act="diagnostics"><div class="grow"><div class="t">🩺 問い合わせ用診断情報</div>
+      <div class="s">不具合調査用の端末情報・直近の操作・エラーを確認してコピー</div></div><div>›</div></div>
+      <div class="cond-note">診断ログはこの端末内に最大100件保存され、自動送信されません。名前・点数・メモ・写真などの入力内容は記録しません。</div>
+    </div>
     <div class="cond-note">さいこー雀 v${APP_VERSION}</div>`;
+}
+function vDiagnostics(){
+  const report = diagReportText();
+  return `<div class="card"><h2>🩺 問い合わせ用診断情報</h2>
+    <div class="s">不具合が起きたとき、この内容を問い合わせに添付してください。送信前に内容を確認できます。</div>
+    <textarea id="diag_report" rows="18" readonly style="font-family:monospace;font-size:11px;white-space:pre">${esc(report)}</textarea>
+    <button class="primary" data-act="diagCopy">📋 診断情報をコピー</button>
+    <button class="secondary" data-act="diagExport">📤 JSONで書き出す</button>
+    <button class="secondary danger" data-act="diagClear">診断ログを消去</button>
+  </div>
+  <div class="card"><h2>記録される情報</h2>
+    <div class="s">アプリのバージョン、ブラウザ・画面サイズ・通信状態、登録件数、直近100件の画面移動・ボタン操作・エラーです。プレイヤー名、点数、予定名、メモ、URL、写真などの入力内容は含みません。診断情報はコピーまたは書き出しを行うまで端末外へ送られません。</div>
+  </div>`;
 }
 function vPresetEdit(){
   const p = S.customPresets.find(x=>x.id===view.pid)
@@ -1480,7 +1587,7 @@ function vSchedule(){
     window._shared = null;
     fetch('data/shared.json?t='+Date.now()).then(r=>r.ok?r.json():null)
       .then(j=>{ window._shared = j || null; if(view.name==='schedule') render(); })
-      .catch(()=>{ window._shared = null; });
+      .catch(e=>{ window._shared = null; diagError('network_error', e, {resource:'shared_schedule'}); });
   }
   const evItems = [];
   S.events.forEach(e=>{
@@ -1850,8 +1957,9 @@ function vHelp(){
   </div>
   <div class="card"><h2>💾 データとバックアップ</h2>
     <div class="s">
-    データはこの端末のブラウザ内にだけ保存されます(サーバー送信なし)。<br><br>
+    対局記録・プレイヤー・予定・メモ・写真などの入力データは、この端末のブラウザ内にだけ保存され、サーバーへ送信されません。アクセス状況の把握にはCloudflare Web Analyticsを利用し、閲覧数・利用環境・表示性能を匿名で集計します。入力データやlocalStorageは送信しません。<br><br>
     <b>節や大会が終わるごとに「設定 → バックアップ(JSON書き出し)」を推奨</b>。機種変更時はそのJSONを新端末で「復元」してください。<br><br>
+    不具合が起きたら<b>「設定 → 問い合わせ用診断情報」</b>を開き、内容を確認してコピーまたはJSON書き出ししてください。診断ログは端末内に最大100件保存され、名前・点数・メモ・写真などの入力内容は記録せず、自動送信もしません。<br><br>
     アプリは一度開けばオフラインでも動作します。オンラインで開けば自動で最新版になります。
     </div>
   </div>`;
@@ -2016,6 +2124,7 @@ function bind(){
 }
 function act(d, el){
   const A = d.act;
+  diagLog('action', {view:view.name, action:A});
   if(A==='newEvent') go({name:'newEvent'});
   else if(A==='openEvents') go({name:'events'});
   else if(A==='navTo'){ hist.length = 0; go({name:d.v}, false); }
@@ -2105,7 +2214,7 @@ function act(d, el){
                    document.getElementById('vd_title').value = j.title;
                    if(j.author_name) document.getElementById('vd_channel').value = j.author_name;
                  } else alert('タイトルを自動取得できませんでした。手入力してください。'); })
-      .catch(()=>alert('取得に失敗しました(オフライン?)。手入力してください。'))
+      .catch(e=>{ diagError('network_error', e, {resource:'video_title'}); alert('取得に失敗しました(オフライン?)。手入力してください。'); })
       .finally(()=>{ el.textContent = 'URLから取得'; });
   }
   else if(A==='saveVideo'){
@@ -2379,6 +2488,31 @@ function act(d, el){
     save(); render();
   }
   else if(A==='delBorder'){ ev().borders.splice(Number(d.i),1); save(); render(); }
+  else if(A==='diagnostics') go({name:'diagnostics'});
+  else if(A==='diagCopy'){
+    const text = diagReportText();
+    const done = ()=>alert('診断情報をコピーしました');
+    if(navigator.clipboard?.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(()=>{
+        if(fallbackCopy(text)) done(); else alert('コピーできませんでした。表示内容を長押ししてコピーしてください。');
+      });
+    }else if(fallbackCopy(text)) done();
+    else alert('コピーできませんでした。表示内容を長押ししてコピーしてください。');
+  }
+  else if(A==='diagExport'){
+    const blob = new Blob([diagReportText()], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `joken-diagnostics-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  }
+  else if(A==='diagClear'){
+    if(confirm('この端末の診断ログを全て消去しますか?')){
+      try{ localStorage.removeItem(DIAGKEY); }catch(e){}
+      render();
+    }
+  }
   else if(A==='export'){
     const blob = new Blob([JSON.stringify(S,null,1)], {type:'application/json'});
     const a = document.createElement('a');
@@ -2403,8 +2537,32 @@ function act(d, el){
     f.click();
   }
 }
+window.addEventListener('error', e=>{
+  diagLog('javascript_error', {
+    view:view.name,
+    message:diagText(e.message || '不明なエラー'),
+    source:diagText(diagSource(e.filename),200),
+    line:e.lineno || 0,
+    column:e.colno || 0,
+    stack:diagText(e.error?.stack || '',1200)
+  });
+});
+window.addEventListener('unhandledrejection', e=>diagError('promise_rejection', e.reason, {view:view.name}));
+window.addEventListener('online', ()=>diagLog('connection_change', {online:true}));
+window.addEventListener('offline', ()=>diagLog('connection_change', {online:false}));
+diagLog('app_start', {
+  online:navigator.onLine,
+  standalone:matchMedia('(display-mode: standalone)').matches || navigator.standalone===true
+});
 render();
-if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js')
+    .then(()=>diagLog('service_worker', {status:'registered'}))
+    .catch(e=>diagError('service_worker_error', e));
+}
 </script>
+<!-- Cloudflare Web Analytics -->
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"86abeeebd3354cc5a1daf2a1097e120b"}'></script>
+<!-- End Cloudflare Web Analytics -->
 </body>
 </html>
